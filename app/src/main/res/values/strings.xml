@@ -1,0 +1,58 @@
+<resources>
+    <string name="app_name">Smart Food Delivery Box</string>
+
+    <!-- Login/Register -->
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="login">Login</string>
+    <string name="register">Register</string>
+    <string name="no_account">Don\'t have an account? Register</string>
+    <string name="have_account">Already have an account? Login</string>
+    <string name="name">Name</string>
+    <string name="phone">Phone Number</string>
+    <string name="device_id">Device ID</string>
+
+    <!-- Box Status -->
+    <string name="locked">Locked</string>
+    <string name="unlocked">Unlocked</string>
+
+    <!-- Parcel Status -->
+    <string name="parcel_available">Parcel Available</string>
+    <string name="no_parcel">No Parcel</string>
+
+    <!-- Buttons -->
+    <string name="unlock">Unlock</string>
+    <string name="lock">Lock</string>
+    <string name="unlock_box">Unlock Box</string>
+    <string name="lock_box">Lock Box</string>
+
+    <!-- Messages -->
+    <string name="last_updated">Last updated: %s</string>
+    <string name="box_status">Box Status</string>
+    <string name="parcel_status">Parcel Status</string>
+
+    <!-- Navigation -->
+    <string name="dashboard">Dashboard</string>
+    <string name="history">History</string>
+    <string name="profile">Profile</string>
+
+    <!-- Menu -->
+    <string name="logout">Logout</string>
+
+    <!-- Collect Food Activity -->
+    <string name="collect_your_food">Collect Your Food</string>
+    <string name="box_information">Box Information</string>
+    <string name="delivery_details">Delivery Details</string>
+    <string name="tracking_number">Tracking Number</string>
+    <string name="items">Items</string>
+    <string name="delivery_service">Delivery Service</string>
+    <string name="delivered_at">Delivered At</string>
+    <string name="unlock_box_to_collect">Unlock Box to Collect</string>
+    <string name="report_issue">Report Issue</string>
+    <string name="box_unlocked_collect">Box Unlocked - Collect Your Food</string>
+    <string name="food_is_ready">Your food is ready for collection!</string>
+    <string name="food_waiting">Your food is waiting in the box</string>
+    <string name="box_unlocked_instruction">The box door is now unlocked. Please open it and collect your food. The delivery will be marked as completed automatically.</string>
+    <string name="unlock_instruction">Tap the button below to unlock the box. You will have 2 minutes to collect your food before the box automatically locks again.</string>
+
+</resources>

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "80088720971",
+    "firebase_url": "https://smartfooddeliverybox-default-rtdb.firebaseio.com",
+    "project_id": "smartfooddeliverybox",
+    "storage_bucket": "smartfooddeliverybox.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:80088720971:android:e3903f26f659a8eb228fce",
+        "android_client_info": {
+          "package_name": "com.arif.smartfooddeliverybox"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDVzzLQVwBvtE9S6Q6sALO7EdWBhLBtvAI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
