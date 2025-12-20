@@ -49,6 +49,8 @@ public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClick
     private int occupiedCount = 0;
     private int totalDeliveries = 0;
 
+    private boolean offlineWarningShown = false;
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
@@ -94,7 +96,7 @@ public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClick
                 // Find first available box
                 DeliveryBox availableBox = null;
                 for (DeliveryBox box : boxList) {
-                    if (box.isAvailable()) {
+                    if (box.isAvailable() && box.isEnabled() && box.isOnline()) {
                         availableBox = box;
                         break;
                     }
@@ -116,6 +118,12 @@ public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClick
     private void loadBoxes() {
         swipeRefresh.setRefreshing(true);
 
+        if (boxesListener != null) {
+            firebaseHelper.getDatabaseReference()
+                    .child("boxes")
+                    .removeEventListener(boxesListener);
+        }
+
         boxesListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -126,49 +134,45 @@ public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClick
 
                 for (DataSnapshot boxSnapshot : snapshot.getChildren()) {
                     DeliveryBox box = boxSnapshot.getValue(DeliveryBox.class);
+
                     if (box != null && box.isEnabled()) {
                         box.setBoxId(boxSnapshot.getKey());
                         boxList.add(box);
 
-                        // Calculate statistics
-                        String status = box.getStatus();
-                        if ("available".equals(status)) {
+                        if ("available".equals(box.getStatus())) {
                             availableCount++;
-                        } else if ("occupied".equals(status)) {
+                        } else if ("occupied".equals(box.getStatus())) {
                             occupiedCount++;
                         }
 
-                        // Sum total deliveries
                         if (box.getStatistics() != null) {
                             totalDeliveries += box.getStatistics().getTotalDeliveries();
                         }
                     }
                 }
 
-                // Update UI
                 updateStatistics();
                 boxAdapter.notifyDataSetChanged();
                 updateEmptyState();
                 swipeRefresh.setRefreshing(false);
-
-                // Check for offline boxes
                 checkOfflineBoxes();
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 swipeRefresh.setRefreshing(false);
-                if (getContext() != null && isAdded()) {
-                    Toast.makeText(getContext(), "Error loading boxes: " + error.getMessage(),
-                            Toast.LENGTH_SHORT).show();
-                }
+                Toast.makeText(getContext(),
+                        "Error loading boxes: " + error.getMessage(),
+                        Toast.LENGTH_SHORT).show();
             }
         };
 
+        // ✅ REAL-TIME LISTENER
         firebaseHelper.getDatabaseReference()
                 .child("boxes")
                 .addValueEventListener(boxesListener);
     }
+
 
     private void updateStatistics() {
         if (tvAvailableCount != null) {
@@ -204,21 +208,30 @@ public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClick
     }
 
     private void checkOfflineBoxes() {
+        if (offlineWarningShown) return;
+
         for (DeliveryBox box : boxList) {
             if (box.isPhysical() && !box.isOnline()) {
-                // Show warning for offline boxes
-                if (getContext() != null && isAdded()) {
-                    Toast.makeText(getContext(),
-                            "⚠️ Box " + box.getBoxNumber() + " is offline",
-                            Toast.LENGTH_SHORT).show();
-                }
+                offlineWarningShown = true;
+                Toast.makeText(getContext(),
+                        "⚠️ Box " + box.getBoxNumber() + " is offline",
+                        Toast.LENGTH_LONG).show();
+                break;
             }
         }
     }
 
+
     @Override
     public void onBoxClick(DeliveryBox box) {
         if (box == null || getContext() == null) return;
+
+        if (!box.isEnabled()) {
+            Toast.makeText(getContext(),
+                    "This box is disabled",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         // Check if box is online
         if (box.isPhysical() && !box.isOnline()) {

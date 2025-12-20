@@ -42,7 +42,10 @@ public class DeliveryBox {
     public void setStatus(String status) { this.status = status; }
 
     public boolean isPhysical() { return isPhysical; }
-    public void setPhysical(boolean physical) { isPhysical = physical; }
+    public void setIsPhysical(boolean isPhysical) {
+        this.isPhysical = isPhysical;
+    }
+
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }

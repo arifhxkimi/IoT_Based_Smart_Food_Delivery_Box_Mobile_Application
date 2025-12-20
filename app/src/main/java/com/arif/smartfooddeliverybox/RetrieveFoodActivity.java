@@ -32,11 +32,14 @@ public class RetrieveFoodActivity extends AppCompatActivity {
 
     private FirebaseHelper firebaseHelper;
     private NotificationHelper notificationHelper;
+
     private String boxId;
     private String boxNumber;
     private String boxLocation;
+
     private ValueEventListener boxListener;
     private Handler handler;
+
     private boolean isUnlocked = false;
     private boolean hasRetrieved = false;
 
@@ -45,13 +48,12 @@ public class RetrieveFoodActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_retrieve_food);
 
-        // Get intent data
         boxId = getIntent().getStringExtra("boxId");
         boxNumber = getIntent().getStringExtra("boxNumber");
         boxLocation = getIntent().getStringExtra("boxLocation");
 
         if (boxId == null) {
-            Toast.makeText(this, "Error: Box information missing", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Box data missing", Toast.LENGTH_SHORT).show();
             finish();
             return;
         }
@@ -83,8 +85,8 @@ public class RetrieveFoodActivity extends AppCompatActivity {
     private void setupToolbar() {
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
             getSupportActionBar().setTitle("Retrieve Food");
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
         toolbar.setNavigationOnClickListener(v -> onBackPressed());
     }
@@ -97,29 +99,25 @@ public class RetrieveFoodActivity extends AppCompatActivity {
     private void updateInitialUI() {
         tvBoxNumber.setText("Box " + boxNumber);
         tvBoxLocation.setText(boxLocation);
-        tvBoxStatus.setText("Occupied - Food Inside");
-        tvBoxStatus.setTextColor(getColor(R.color.primary));
-
+        tvBoxStatus.setText("Occupied");
         tvStatusMessage.setText("Your food is ready!");
-        tvInstructions.setText("Tap 'Unlock & Retrieve' to open the box and collect your food.");
+        tvInstructions.setText("Tap Unlock to retrieve your food.");
     }
 
     private void startBoxMonitoring() {
         boxListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
-                if (snapshot.exists()) {
-                    DeliveryBox box = snapshot.getValue(DeliveryBox.class);
-                    if (box != null) {
-                        handleBoxStatusChange(box);
-                    }
+                DeliveryBox box = snapshot.getValue(DeliveryBox.class);
+                if (box != null) {
+                    handleBoxStatusChange(box);
                 }
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 Toast.makeText(RetrieveFoodActivity.this,
-                        "Error monitoring box", Toast.LENGTH_SHORT).show();
+                        "Failed to monitor box", Toast.LENGTH_SHORT).show();
             }
         };
 
@@ -130,32 +128,20 @@ public class RetrieveFoodActivity extends AppCompatActivity {
     }
 
     private void handleBoxStatusChange(DeliveryBox box) {
-        String status = box.getStatus();
-
         tvBoxStatus.setText(box.getStatusText());
 
-        if ("unlocked".equals(status) && isUnlocked && !hasRetrieved) {
-            // Box is unlocked - waiting for user to retrieve
+        if ("unlocked".equals(box.getStatus()) && isUnlocked && !hasRetrieved) {
             btnUnlock.setEnabled(false);
-            btnUnlock.setText("Box Unlocked - Take Your Food");
-
-            tvStatusMessage.setText("✓ Box is unlocked!");
-            tvStatusMessage.setTextColor(getColor(R.color.status_unlocked));
-
-            tvInstructions.setText("Please open the box and take your food. The box will automatically lock when closed.");
-
-        } else if ("available".equals(status) && isUnlocked && !hasRetrieved) {
-            // Sensor detected empty - food retrieved!
-            hasRetrieved = true;
-            showRetrievalSuccess();
+            tvStatusMessage.setText("Box unlocked");
+            tvInstructions.setText("Take your food and tap Done.");
         }
     }
 
     private void confirmUnlock() {
         new AlertDialog.Builder(this)
                 .setTitle("Unlock Box")
-                .setMessage("Unlock Box " + boxNumber + " to retrieve your food?")
-                .setPositiveButton("Yes, Unlock", (dialog, which) -> unlockBox())
+                .setMessage("Unlock Box " + boxNumber + "?")
+                .setPositiveButton("Unlock", (d, w) -> unlockBox())
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -164,97 +150,120 @@ public class RetrieveFoodActivity extends AppCompatActivity {
         progressBar.setVisibility(View.VISIBLE);
         btnUnlock.setEnabled(false);
 
-        // Update box status to "unlocked"
         firebaseHelper.getDatabaseReference()
                 .child("boxes")
                 .child(boxId)
                 .child("status")
                 .setValue("unlocked")
-                .addOnSuccessListener(aVoid -> {
+                .addOnSuccessListener(v -> {
                     isUnlocked = true;
                     progressBar.setVisibility(View.GONE);
-                    Toast.makeText(this, "Box unlocked!", Toast.LENGTH_SHORT).show();
-
-                    // Log history
-                    logHistory("retrieved");
-
-                    // FIX #2: Show immediate success message and let user close
-                    // When user dismisses dialog, mark as retrieved
-                    handler.postDelayed(() -> {
-                        if (!hasRetrieved) {
-                            showRetrievalReadyDialog();
-                        }
-                    }, 1000); // 1 second delay for smooth transition
-                })
-                .addOnFailureListener(e -> {
-                    progressBar.setVisibility(View.GONE);
-                    btnUnlock.setEnabled(true);
-                    Toast.makeText(this, "Failed to unlock: " + e.getMessage(),
-                            Toast.LENGTH_SHORT).show();
+                    showRetrieveDialog();
                 });
     }
 
-    private void showRetrievalReadyDialog() {
+    private void showRetrieveDialog() {
         new AlertDialog.Builder(this)
-                .setTitle("Box Unlocked!")
-                .setMessage("Please take your food from the box.\n\nTap 'Done' after you've collected your food.")
-                .setPositiveButton("Done", (dialog, which) -> {
-                    // User confirms they've taken food - set to available
-                    firebaseHelper.getDatabaseReference()
-                            .child("boxes")
-                            .child(boxId)
-                            .child("status")
-                            .setValue("available")
-                            .addOnSuccessListener(unused -> {
-                                hasRetrieved = true;
-                                showRetrievalSuccess();
-                            });
-                })
+                .setTitle("Box Unlocked")
+                .setMessage("Take your food and tap Done.")
+                .setPositiveButton("Done", (d, w) -> completeRetrieval())
                 .setCancelable(false)
                 .show();
     }
 
-    private void showRetrievalSuccess() {
-        // Send notification
+    private void completeRetrieval() {
+        hasRetrieved = true;
+
+        firebaseHelper.getDatabaseReference()
+                .child("boxes")
+                .child(boxId)
+                .child("status")
+                .setValue("available");
+
+        incrementUserDeliveries();   // ✅ per account
+        incrementBoxDeliveries();    // ✅ optional
+        logHistory("retrieved");
+
         notificationHelper.notifyFoodRetrieved(boxNumber);
 
         new AlertDialog.Builder(this)
-                .setTitle("✓ Food Retrieved!")
-                .setMessage("Enjoy your meal! 😊\n\nThe box is now available for your next delivery.")
-                .setPositiveButton("Done", (dialog, which) -> finish())
+                .setTitle("Success")
+                .setMessage("Food retrieved successfully!")
+                .setPositiveButton("OK", (d, w) -> finish())
                 .setCancelable(false)
                 .show();
+    }
+
+    /* ================= STATISTICS ================= */
+
+    private void incrementUserDeliveries() {
+        String userId = firebaseHelper.getCurrentUserId();
+        if (userId == null) return;
+
+        firebaseHelper.getDatabaseReference()
+                .child("users")
+                .child(userId)
+                .child("statistics")
+                .child("totalDeliveries")
+                .get()
+                .addOnSuccessListener(snap -> {
+                    int current = snap.exists() ? snap.getValue(Integer.class) : 0;
+                    firebaseHelper.getDatabaseReference()
+                            .child("users")
+                            .child(userId)
+                            .child("statistics")
+                            .child("totalDeliveries")
+                            .setValue(current + 1);
+                });
+    }
+
+    private void incrementBoxDeliveries() {
+        firebaseHelper.getDatabaseReference()
+                .child("boxes")
+                .child(boxId)
+                .child("statistics")
+                .child("totalDeliveries")
+                .get()
+                .addOnSuccessListener(snap -> {
+                    int current = snap.exists() ? snap.getValue(Integer.class) : 0;
+                    firebaseHelper.getDatabaseReference()
+                            .child("boxes")
+                            .child(boxId)
+                            .child("statistics")
+                            .child("totalDeliveries")
+                            .setValue(current + 1);
+                });
     }
 
     private void logHistory(String action) {
         String userId = firebaseHelper.getCurrentUserId();
         if (userId == null) return;
 
-        String historyId = firebaseHelper.getDatabaseReference()
+        String key = firebaseHelper.getDatabaseReference()
                 .child("history")
                 .child(userId)
                 .push()
                 .getKey();
 
-        if (historyId != null) {
+        if (key != null) {
             firebaseHelper.getDatabaseReference()
                     .child("history")
                     .child(userId)
-                    .child(historyId)
+                    .child(key)
                     .child("boxNumber")
                     .setValue(boxNumber);
 
             firebaseHelper.getDatabaseReference()
                     .child("history")
                     .child(userId)
-                    .child(historyId)
+                    .child(key)
                     .child("action")
                     .setValue(action);
 
             firebaseHelper.getDatabaseReference()
                     .child("history")
                     .child(userId)
-                    .child(historyId)
+                    .child(key)
                     .child("timestamp")
                     .setValue(System.currentTimeMillis());
         }
@@ -263,36 +272,12 @@ public class RetrieveFoodActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (boxListener != null && boxId != null) {
+        if (boxListener != null) {
             firebaseHelper.getDatabaseReference()
                     .child("boxes")
                     .child(boxId)
                     .removeEventListener(boxListener);
         }
-        if (handler != null) {
-            handler.removeCallbacksAndMessages(null);
-        }
-    }
-
-    @Override
-    public void onBackPressed() {
-        if (isUnlocked && !hasRetrieved) {
-            new AlertDialog.Builder(this)
-                    .setTitle("Leave?")
-                    .setMessage("The box is unlocked. Are you sure you want to leave?")
-                    .setPositiveButton("Yes", (dialog, which) -> {
-                        // Re-lock the box if user leaves without retrieving
-                        firebaseHelper.getDatabaseReference()
-                                .child("boxes")
-                                .child(boxId)
-                                .child("status")
-                                .setValue("occupied"); // Return to occupied state
-                        super.onBackPressed();
-                    })
-                    .setNegativeButton("No", null)
-                    .show();
-        } else {
-            super.onBackPressed();
-        }
+        handler.removeCallbacksAndMessages(null);
     }
 }

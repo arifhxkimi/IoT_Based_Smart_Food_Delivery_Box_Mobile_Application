@@ -115,7 +115,7 @@ public class UnlockForDeliveryActivity extends AppCompatActivity {
                                 if (box != null) {
                                     boxId = boxSnapshot.getKey();
                                     boxNumber = box.getBoxNumber();
-                                    //boxLocation = box.getLocation();
+                                    boxLocation = "Box " + box.getBoxNumber();
 
                                     updateInitialUI();
                                     startBoxMonitoring();
