@@ -30,27 +30,44 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="24dp">
+            android:padding="24dp"
+            android:gravity="center_horizontal">
 
-            <!-- Profile Icon -->
-            <com.google.android.material.card.MaterialCardView
+            <!-- Profile Picture Section -->
+            <FrameLayout
                 android:layout_width="120dp"
                 android:layout_height="120dp"
-                android:layout_gravity="center_horizontal"
-                android:layout_marginBottom="32dp"
-                app:cardCornerRadius="60dp"
-                app:cardElevation="4dp">
+                android:layout_marginBottom="24dp">
 
-                <ImageView
+                <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:padding="24dp"
-                    android:src="@drawable/ic_user"
-                    android:contentDescription="Profile"
+                    app:cardCornerRadius="60dp"
+                    app:cardElevation="4dp"
+                    app:cardBackgroundColor="#F5F5F5">
 
-                    app:tint="@color/primary" />
+                    <ImageView
+                        android:id="@+id/ivProfile"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:src="@drawable/ic_user"
+                        android:scaleType="centerCrop"
+                        app:tint="#757575"/>
+                </androidx.cardview.widget.CardView>
 
-            </com.google.android.material.card.MaterialCardView>
+                <!-- Camera Badge -->
+                <ImageView
+                    android:id="@+id/btnChangePhoto"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_gravity="bottom|end"
+                    android:src="@android:drawable/ic_menu_camera"
+                    android:padding="8dp"
+                    android:background="@drawable/circle_background"
+                    android:backgroundTint="@color/primary"
+                    app:tint="@android:color/white"
+                    android:elevation="6dp"/>
+            </FrameLayout>
 
             <!-- Name Field -->
             <com.google.android.material.textfield.TextInputLayout
@@ -73,7 +90,7 @@
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
+                android:layout_marginBottom="8dp"
                 android:hint="Email"
                 app:startIconDrawable="@drawable/ic_email"
                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
@@ -93,10 +110,8 @@
                 android:text="Email cannot be changed"
                 android:textSize="12sp"
                 android:textColor="@android:color/darker_gray"
-                android:layout_marginTop="-12dp"
                 android:layout_marginBottom="16dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp" />
+                android:paddingStart="4dp" />
 
             <!-- Phone Field -->
             <com.google.android.material.textfield.TextInputLayout

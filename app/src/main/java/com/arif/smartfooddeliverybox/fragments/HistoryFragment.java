@@ -1,10 +1,12 @@
 package com.arif.smartfooddeliverybox.fragments;
 
 import android.os.Bundle;
+import android.text.format.DateUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -18,6 +20,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.arif.smartfooddeliverybox.R;
 import com.arif.smartfooddeliverybox.utils.FirebaseHelper;
+import com.google.android.material.chip.ChipGroup;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.ValueEventListener;
@@ -35,9 +38,14 @@ public class HistoryFragment extends Fragment {
 
     private RecyclerView recyclerViewHistory;
     private HistoryAdapter historyAdapter;
-    private List<HistoryItem> historyList;
+
+    // We need TWO lists: one for all data, one for what is shown
+    private List<HistoryItem> allHistoryList;
+    private List<HistoryItem> displayedList;
+
     private SwipeRefreshLayout swipeRefresh;
     private LinearLayout layoutEmpty;
+    private ChipGroup chipGroupFilter;
 
     private FirebaseHelper firebaseHelper;
     private ValueEventListener historyListener;
@@ -49,6 +57,7 @@ public class HistoryFragment extends Fragment {
 
         initViews(view);
         setupRecyclerView();
+        setupFilters(); // NEW: Add filter logic
         loadHistory();
 
         return view;
@@ -60,106 +69,146 @@ public class HistoryFragment extends Fragment {
         recyclerViewHistory = view.findViewById(R.id.recyclerViewDeliveries);
         swipeRefresh = view.findViewById(R.id.swipeRefresh);
         layoutEmpty = view.findViewById(R.id.layoutEmpty);
+        chipGroupFilter = view.findViewById(R.id.chipGroupFilter); // Bind the ChipGroup
 
         swipeRefresh.setOnRefreshListener(this::loadHistory);
     }
 
     private void setupRecyclerView() {
-        historyList = new ArrayList<>();
-        historyAdapter = new HistoryAdapter(historyList);
+        allHistoryList = new ArrayList<>();
+        displayedList = new ArrayList<>();
+
+        // Adapter uses the displayedList
+        historyAdapter = new HistoryAdapter(displayedList);
         recyclerViewHistory.setLayoutManager(new LinearLayoutManager(getContext()));
         recyclerViewHistory.setAdapter(historyAdapter);
+    }
+
+    // NEW: Handle Chip Clicks
+    private void setupFilters() {
+        if (chipGroupFilter != null) {
+            chipGroupFilter.setOnCheckedChangeListener((group, checkedId) -> {
+                String filterType = "all";
+                if (checkedId == R.id.chipPending) filterType = "unlocked";
+                else if (checkedId == R.id.chipInBox) filterType = "food_stored";
+                else if (checkedId == R.id.chipCompleted) filterType = "retrieved";
+
+                applyFilter(filterType);
+            });
+        }
     }
 
     private void loadHistory() {
         if (firebaseHelper.getCurrentUserId() == null) {
             swipeRefresh.setRefreshing(false);
-            showEmptyState();
             return;
         }
 
         swipeRefresh.setRefreshing(true);
         String userId = firebaseHelper.getCurrentUserId();
 
-        Log.d(TAG, "Loading history for user: " + userId);
+        if (historyListener != null) {
+            firebaseHelper.getDatabaseReference().child("history").child(userId).removeEventListener(historyListener);
+        }
 
         historyListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
-                historyList.clear();
-
-                Log.d(TAG, "History snapshot exists: " + snapshot.exists());
-                Log.d(TAG, "History children count: " + snapshot.getChildrenCount());
+                allHistoryList.clear();
 
                 for (DataSnapshot historySnapshot : snapshot.getChildren()) {
                     try {
                         String action = historySnapshot.child("action").getValue(String.class);
                         String boxNumber = historySnapshot.child("boxNumber").getValue(String.class);
-                        Long timestamp = historySnapshot.child("timestamp").getValue(Long.class);
 
-                        Log.d(TAG, "History entry - Action: " + action + ", Box: " + boxNumber + ", Time: " + timestamp);
+                        // FIX SORTING: Robust timestamp parsing
+                        long timestamp = 0;
+                        Object tsObj = historySnapshot.child("timestamp").getValue();
 
-                        if (action != null && boxNumber != null && timestamp != null) {
+                        if (tsObj instanceof Long) {
+                            timestamp = (Long) tsObj;
+                        } else if (tsObj instanceof Double) {
+                            timestamp = ((Double) tsObj).longValue();
+                        } else if (tsObj instanceof String) {
+                            try {
+                                timestamp = Long.parseLong((String) tsObj);
+                            } catch (NumberFormatException e) {
+                                timestamp = 0;
+                            }
+                        }
+
+                        if (action != null && boxNumber != null) {
                             HistoryItem item = new HistoryItem(action, boxNumber, timestamp);
-                            historyList.add(item);
+                            allHistoryList.add(item);
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "Error parsing history item: " + e.getMessage());
                     }
                 }
 
-                // Sort by timestamp (newest first)
-                Collections.sort(historyList, (a, b) -> Long.compare(b.timestamp, a.timestamp));
+                // FIX SORTING: Sort Newest First (Descending)
+                Collections.sort(allHistoryList, (o1, o2) -> Long.compare(o2.timestamp, o1.timestamp));
 
-                historyAdapter.notifyDataSetChanged();
-                updateEmptyState();
+                // Apply current filter (or default to 'all')
+                int checkedId = (chipGroupFilter != null) ? chipGroupFilter.getCheckedChipId() : -1;
+                String currentFilter = "all";
+                if (checkedId == R.id.chipPending) currentFilter = "unlocked";
+                else if (checkedId == R.id.chipInBox) currentFilter = "food_stored";
+                else if (checkedId == R.id.chipCompleted) currentFilter = "retrieved";
+
+                applyFilter(currentFilter);
                 swipeRefresh.setRefreshing(false);
-
-                Log.d(TAG, "Loaded " + historyList.size() + " history items");
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 swipeRefresh.setRefreshing(false);
-                if (getContext() != null && isAdded()) {
-                    Toast.makeText(getContext(), "Failed to load history: " + error.getMessage(), Toast.LENGTH_SHORT).show();
+                if (getContext() != null) {
+                    Toast.makeText(getContext(), "Error: " + error.getMessage(), Toast.LENGTH_SHORT).show();
                 }
-                Log.e(TAG, "Database error: " + error.getMessage());
             }
         };
 
-        firebaseHelper.getDatabaseReference()
-                .child("history")
-                .child(userId)
-                .addValueEventListener(historyListener);
+        firebaseHelper.getDatabaseReference().child("history").child(userId).addValueEventListener(historyListener);
+    }
+
+    // NEW: Filter Logic
+    private void applyFilter(String filterType) {
+        displayedList.clear();
+
+        if ("all".equals(filterType)) {
+            displayedList.addAll(allHistoryList);
+        } else {
+            for (HistoryItem item : allHistoryList) {
+                if (item.action.equals(filterType)) {
+                    displayedList.add(item);
+                }
+            }
+        }
+
+        historyAdapter.notifyDataSetChanged();
+        updateEmptyState();
     }
 
     private void updateEmptyState() {
-        if (historyList.isEmpty()) {
-            showEmptyState();
+        if (displayedList.isEmpty()) {
+            layoutEmpty.setVisibility(View.VISIBLE);
+            recyclerViewHistory.setVisibility(View.GONE);
         } else {
             layoutEmpty.setVisibility(View.GONE);
             recyclerViewHistory.setVisibility(View.VISIBLE);
         }
     }
 
-    private void showEmptyState() {
-        layoutEmpty.setVisibility(View.VISIBLE);
-        recyclerViewHistory.setVisibility(View.GONE);
-    }
-
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        if (historyListener != null && firebaseHelper != null && firebaseHelper.getCurrentUserId() != null) {
-            firebaseHelper.getDatabaseReference()
-                    .child("history")
-                    .child(firebaseHelper.getCurrentUserId())
-                    .removeEventListener(historyListener);
+        if (historyListener != null && firebaseHelper != null) {
+            firebaseHelper.getDatabaseReference().child("history").removeEventListener(historyListener);
         }
     }
 
-    // Simple HistoryItem class
+    // --- Inner Model Class ---
     private static class HistoryItem {
         String action;
         String boxNumber;
@@ -170,27 +219,9 @@ public class HistoryFragment extends Fragment {
             this.boxNumber = boxNumber;
             this.timestamp = timestamp;
         }
-
-        public String getActionText() {
-            switch (action) {
-                case "unlocked": return "🔓 Box Unlocked for Delivery";
-                case "food_stored": return "📥 Food Delivered";
-                case "retrieved": return "✅ Food Retrieved";
-                default: return "📋 " + action;
-            }
-        }
-
-        public String getActionColor() {
-            switch (action) {
-                case "unlocked": return "#2196F3"; // Blue
-                case "food_stored": return "#9C27B0"; // Purple
-                case "retrieved": return "#4CAF50"; // Green
-                default: return "#757575"; // Gray
-            }
-        }
     }
 
-    // Simple Adapter
+    // --- Adapter (Updated to use item_history_simple.xml) ---
     private class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.HistoryViewHolder> {
 
         private List<HistoryItem> items;
@@ -204,6 +235,7 @@ public class HistoryFragment extends Fragment {
         @NonNull
         @Override
         public HistoryViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            // Using your existing "item_history_simple" layout
             View view = LayoutInflater.from(parent.getContext())
                     .inflate(R.layout.item_history_simple, parent, false);
             return new HistoryViewHolder(view);
@@ -213,17 +245,37 @@ public class HistoryFragment extends Fragment {
         public void onBindViewHolder(@NonNull HistoryViewHolder holder, int position) {
             HistoryItem item = items.get(position);
 
-            holder.tvAction.setText(item.getActionText());
             holder.tvBox.setText("Box " + item.boxNumber);
             holder.tvDate.setText(dateFormat.format(new Date(item.timestamp)));
             holder.tvTime.setText(timeFormat.format(new Date(item.timestamp)));
 
-            // Set action color
+            // Styling based on action
+            switch (item.action) {
+                case "unlocked":
+                    holder.tvAction.setText("🔓 Unlocked for Delivery");
+                    setColors(holder, "#FF9800"); // Orange
+                    break;
+                case "food_stored":
+                    holder.tvAction.setText("📥 Food Stored");
+                    setColors(holder, "#9C27B0"); // Purple
+                    break;
+                case "retrieved":
+                    holder.tvAction.setText("✅ Delivery Collected");
+                    setColors(holder, "#4CAF50"); // Green
+                    break;
+                default:
+                    holder.tvAction.setText("📋 " + item.action);
+                    setColors(holder, "#757575");
+                    break;
+            }
+        }
+
+        private void setColors(HistoryViewHolder holder, String colorHex) {
             try {
-                int color = android.graphics.Color.parseColor(item.getActionColor());
+                int color = android.graphics.Color.parseColor(colorHex);
                 holder.tvAction.setTextColor(color);
             } catch (Exception e) {
-                // Ignore color parsing errors
+                // Ignore parsing errors
             }
         }
 
@@ -233,6 +285,7 @@ public class HistoryFragment extends Fragment {
         }
 
         class HistoryViewHolder extends RecyclerView.ViewHolder {
+            // Updated IDs to match your item_history_simple.xml
             TextView tvAction, tvBox, tvDate, tvTime;
 
             public HistoryViewHolder(@NonNull View itemView) {

@@ -5,6 +5,7 @@ public class User {
     private String name;
     private String email;
     private String phone;
+    private String profileImage; // New field for the image string
 
     public User() {
         // Required empty constructor for Firebase
@@ -29,4 +30,7 @@ public class User {
 
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
+
+    public String getProfileImage() { return profileImage; }
+    public void setProfileImage(String profileImage) { this.profileImage = profileImage; }
 }

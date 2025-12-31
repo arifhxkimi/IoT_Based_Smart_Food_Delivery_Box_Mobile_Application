@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.cardview.widget.CardView
+<com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardView"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="12dp"
+    android:layout_marginBottom="16dp"
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
     app:cardCornerRadius="16dp"
-    app:cardElevation="3dp">
+    app:cardElevation="4dp"
+    app:strokeWidth="2dp"
+    app:strokeColor="#E0E0E0">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -22,14 +26,20 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <!-- Box Icon -->
-            <ImageView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:src="@drawable/ic_box"
-                android:padding="8dp"
+            <!-- Box Icon Container -->
+            <FrameLayout
+                android:layout_width="56dp"
+                android:layout_height="56dp"
                 android:background="@drawable/circle_background"
-                android:backgroundTint="#E3F2FD"/>
+                android:backgroundTint="#F5F5F5">
+
+                <ImageView
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_box"
+                    app:tint="#424242"/>
+            </FrameLayout>
 
             <!-- Box Info -->
             <LinearLayout
@@ -37,7 +47,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginStart="12dp">
+                android:layout_marginStart="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -51,47 +61,45 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Box 1"
-                        android:textSize="18sp"
+                        android:textSize="20sp"
                         android:textStyle="bold"
                         android:textColor="#212121"/>
 
+                    <!-- Physical/Online Badge -->
                     <TextView
                         android:id="@+id/tvPhysical"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="PHYSICAL"
+                        android:text="ONLINE"
                         android:textSize="10sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/white"
+                        android:textColor="#4CAF50"
                         android:background="@drawable/badge_background"
-                        android:backgroundTint="#4CAF50"
+                        android:backgroundTint="#E8F5E9"
                         android:paddingStart="8dp"
                         android:paddingEnd="8dp"
                         android:paddingTop="4dp"
                         android:paddingBottom="4dp"
                         android:visibility="gone"/>
-
                 </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvLocation"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Ground Floor - Left"
-                    android:textSize="14sp"
+                    android:text="Tap to manage"
+                    android:textSize="13sp"
                     android:textColor="#757575"
-                    android:layout_marginTop="4dp"/>
-
+                    android:layout_marginTop="2dp"/>
             </LinearLayout>
-
         </LinearLayout>
 
         <!-- Divider -->
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:background="#E0E0E0"
-            android:layout_marginTop="12dp"
+            android:background="#EEEEEE"
+            android:layout_marginTop="16dp"
             android:layout_marginBottom="12dp"/>
 
         <!-- Status Row -->
@@ -99,7 +107,18 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:gravity="center_vertical"
+            android:background="@drawable/rounded_background"
+            android:backgroundTint="#FAFAFA"
+            android:padding="8dp">
+
+            <ImageView
+                android:id="@+id/ivStatusIcon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_lock"
+                app:tint="#757575"
+                android:layout_marginEnd="8dp"/>
 
             <TextView
                 android:layout_width="wrap_content"
@@ -116,9 +135,7 @@
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:textColor="#4CAF50"/>
-
         </LinearLayout>
 
     </LinearLayout>
-
-</androidx.cardview.widget.CardView>
+</com.google.android.material.card.MaterialCardView>
