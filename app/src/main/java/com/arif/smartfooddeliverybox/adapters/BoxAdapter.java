@@ -5,15 +5,13 @@ import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
-
 import androidx.annotation.NonNull;
 import androidx.cardview.widget.CardView;
 import androidx.recyclerview.widget.RecyclerView;
-
 import com.arif.smartfooddeliverybox.R;
 import com.arif.smartfooddeliverybox.models.DeliveryBox;
-
 import java.util.List;
 
 public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
@@ -32,7 +30,6 @@ public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
         this.listener = listener;
     }
 
-    // ADD THIS METHOD - DashboardFragment calls it
     public void setBoxList(List<DeliveryBox> boxList) {
         this.boxList = boxList;
         notifyDataSetChanged();
@@ -41,6 +38,7 @@ public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
     @NonNull
     @Override
     public BoxViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        // Ensure this points to your updated layout file
         View view = LayoutInflater.from(context).inflate(R.layout.item_box, parent, false);
         return new BoxViewHolder(view);
     }
@@ -49,48 +47,63 @@ public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
     public void onBindViewHolder(@NonNull BoxViewHolder holder, int position) {
         DeliveryBox box = boxList.get(position);
 
-        holder.tvBoxNumber.setText("Box " + box.getBoxNumber());
+        // 1. Set Basic Info
+        holder.tvBoxNumber.setText(box.getName());
+        holder.tvLocation.setText("Tap to manage");
 
-        // Show location as "Box X" format
-        holder.tvLocation.setText("Box " + box.getBoxNumber());
-
+        // 2. Set Status Text
         holder.tvStatus.setText(box.getStatusText());
 
-        // Set status color
+        // 3. Status Styling (Color & Icons)
+        String colorHex = box.getStatusColor();
+        int color = Color.parseColor(colorHex);
+
+        // Text Color
+        holder.tvStatus.setTextColor(color);
+
+        // Status Icon Logic
+        if (box.isAvailable()) {
+            // Ensure you have ic_lock_open drawable
+            holder.ivStatusIcon.setImageResource(R.drawable.ic_lock_open);
+        } else {
+            // Ensure you have ic_lock drawable
+            holder.ivStatusIcon.setImageResource(R.drawable.ic_lock);
+        }
+        holder.ivStatusIcon.setColorFilter(color);
+
+        // 4. Tint the Status Pill Background
+        // This applies a light version (20% opacity) of the status color to the pill
         try {
-            holder.tvStatus.setTextColor(Color.parseColor(box.getStatusColor()));
-            holder.cardView.setCardBackgroundColor(Color.parseColor(box.getStatusColor() + "20")); // 20% opacity
-        } catch (IllegalArgumentException e) {
-            holder.tvStatus.setTextColor(Color.GRAY);
+            holder.statusContainer.setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(color + 0x20000000)
+            );
+        } catch (Exception e) {
+            // Fallback if color math fails
+            holder.statusContainer.setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#E0E0E0"))
+            );
         }
 
-        // Show physical badge and online status
+        // 5. Online/Offline Indicator (Optional Badge)
         if (box.isPhysical()) {
             holder.tvPhysical.setVisibility(View.VISIBLE);
-
-            // Show online/offline indicator
             if (box.isOnline()) {
                 holder.tvPhysical.setText("🟢 ONLINE");
                 holder.tvPhysical.setTextColor(Color.parseColor("#4CAF50"));
+                holder.cardView.setAlpha(1.0f);
             } else {
                 holder.tvPhysical.setText("🔴 OFFLINE");
                 holder.tvPhysical.setTextColor(Color.parseColor("#F44336"));
+                holder.cardView.setAlpha(0.7f);
             }
         } else {
             holder.tvPhysical.setVisibility(View.GONE);
-        }
-
-        // Dim card if offline
-        if (box.isPhysical() && !box.isOnline()) {
-            holder.cardView.setAlpha(0.6f);
-        } else {
             holder.cardView.setAlpha(1.0f);
         }
 
+        // 6. Click Listener
         holder.itemView.setOnClickListener(v -> {
-            if (listener != null) {
-                listener.onBoxClick(box);
-            }
+            if (listener != null) listener.onBoxClick(box);
         });
     }
 
@@ -102,6 +115,8 @@ public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
     static class BoxViewHolder extends RecyclerView.ViewHolder {
         CardView cardView;
         TextView tvBoxNumber, tvLocation, tvStatus, tvPhysical;
+        ImageView ivStatusIcon;
+        View statusContainer; // The Layout for the status pill
 
         public BoxViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -110,6 +125,10 @@ public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
             tvLocation = itemView.findViewById(R.id.tvLocation);
             tvStatus = itemView.findViewById(R.id.tvStatus);
             tvPhysical = itemView.findViewById(R.id.tvPhysical);
+
+            // New views from updated item_box.xml
+            ivStatusIcon = itemView.findViewById(R.id.ivStatusIcon);
+            statusContainer = itemView.findViewById(R.id.statusContainer);
         }
     }
 }

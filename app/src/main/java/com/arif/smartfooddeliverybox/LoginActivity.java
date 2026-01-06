@@ -9,6 +9,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDelegate; // Added for consistency
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
@@ -26,6 +27,9 @@ public class LoginActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Force Light Mode (Optional, but good for consistency)
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
@@ -98,35 +102,40 @@ public class LoginActivity extends AppCompatActivity {
         mAuth.signInWithEmailAndPassword(email, password)
                 .addOnCompleteListener(task -> {
                     showProgress(false);
+
                     if (task.isSuccessful()) {
-                        Toast.makeText(LoginActivity.this,
-                                "Login successful!", Toast.LENGTH_SHORT).show();
+                        // SUCCESS: Only show success toast and navigate
+                        Toast.makeText(LoginActivity.this, "Login successful!", Toast.LENGTH_SHORT).show();
                         navigateToMain();
-                    } String errorMessage = "Login failed";
+                    } else {
+                        // FAILURE: Only run this block if login actually failed
+                        String errorMessage = "Login failed";
 
-                    if (task.getException() != null) {
-                        String error = task.getException().getMessage();
+                        if (task.getException() != null) {
+                            String error = task.getException().getMessage();
 
-                        if (error != null) {
-                            if (error.contains("no user record") || error.contains("user not found")) {
-                                errorMessage = "No account found. Please register first.";
-                            } else if (error.contains("password is invalid") || error.contains("wrong password")) {
-                                errorMessage = "Incorrect password. Please try again.";
-                            } else if (error.contains("badly formatted") || error.contains("invalid email")) {
-                                errorMessage = "Invalid email format";
-                            } else if (error.contains("network error")) {
-                                errorMessage = "Network error. Check your internet connection.";
-                            } else if (error.contains("too many requests")) {
-                                errorMessage = "Too many login attempts. Please try again later.";
-                            } else if (error.contains("disabled")) {
-                                errorMessage = "This account has been disabled.";
-                            } else {
-                                errorMessage = error;
+                            if (error != null) {
+                                error = error.toLowerCase(); // Normalized for checking
+                                if (error.contains("no user record") || error.contains("user not found")) {
+                                    errorMessage = "No account found. Please register first.";
+                                } else if (error.contains("password is invalid") || error.contains("wrong password")) {
+                                    errorMessage = "Incorrect password. Please try again.";
+                                } else if (error.contains("badly formatted") || error.contains("invalid email")) {
+                                    errorMessage = "Invalid email format";
+                                } else if (error.contains("network error")) {
+                                    errorMessage = "Network error. Check your internet connection.";
+                                } else if (error.contains("too many requests")) {
+                                    errorMessage = "Too many login attempts. Please try again later.";
+                                } else if (error.contains("disabled")) {
+                                    errorMessage = "This account has been disabled.";
+                                } else {
+                                    // Use original error message for unknown errors
+                                    errorMessage = task.getException().getMessage();
+                                }
                             }
                         }
+                        Toast.makeText(LoginActivity.this, errorMessage, Toast.LENGTH_LONG).show();
                     }
-
-                    Toast.makeText(LoginActivity.this, errorMessage, Toast.LENGTH_LONG).show();
                 });
     }
 

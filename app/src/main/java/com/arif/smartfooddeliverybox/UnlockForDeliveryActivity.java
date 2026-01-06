@@ -1,7 +1,9 @@
 package com.arif.smartfooddeliverybox;
 
+import android.content.DialogInterface;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Bundle;
-import android.os.Handler;
 import android.view.View;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -10,19 +12,17 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.biometric.BiometricManager; // Import for Availability Check
-import androidx.biometric.BiometricPrompt; // Import for Fingerprint
-import androidx.core.content.ContextCompat; // Import for Executor
-import androidx.cardview.widget.CardView;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
 
 import com.arif.smartfooddeliverybox.models.DeliveryBox;
 import com.arif.smartfooddeliverybox.utils.FirebaseHelper;
 import com.arif.smartfooddeliverybox.utils.NotificationHelper;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseError;
-import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.database.*;
 
 import java.util.concurrent.Executor;
 
@@ -35,47 +35,41 @@ public class UnlockForDeliveryActivity extends AppCompatActivity {
 
     private FirebaseHelper firebaseHelper;
     private NotificationHelper notificationHelper;
-    private String boxId, boxNumber, boxLocation;
-    private ValueEventListener boxListener;
-    private Handler handler;
-    private boolean isWaitingForFood = false;
-    private boolean hasUnlockedBox = false;
 
-    // Biometric Variables
+    private String boxId, boxNumber, boxLocation, currentUserId;
+    private boolean unlockCommitted = false; // Tracks if we successfully unlocked the box
+
+    private ValueEventListener boxListener;
+
+    // Biometrics
     private Executor executor;
     private BiometricPrompt biometricPrompt;
     private BiometricPrompt.PromptInfo promptInfo;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_unlock_for_delivery);
 
         firebaseHelper = FirebaseHelper.getInstance();
         notificationHelper = new NotificationHelper(this);
-        handler = new Handler();
+        currentUserId = firebaseHelper.getCurrentUserId();
 
-        initViews();
-        setupToolbar();
-        setupListeners();
-        setupBiometrics(); // Initialize Security
-
-        // Get intent data
         boxId = getIntent().getStringExtra("boxId");
         boxNumber = getIntent().getStringExtra("boxNumber");
         boxLocation = getIntent().getStringExtra("boxLocation");
 
-        if (boxId != null && boxNumber != null && boxLocation != null) {
-            updateInitialUI();
-            startBoxMonitoring();
-        } else {
-            findAvailableBox();
-        }
+        initViews();
+        setupToolbar();
+        setupBiometrics();
+        setupListeners();
+        updateInitialUI();
+        startMonitoring();
     }
 
     private void initViews() {
         toolbar = findViewById(R.id.toolbar);
-        // IDs must match your XML layout
         tvBoxNumber = findViewById(R.id.tvBoxNumber);
         tvBoxLocation = findViewById(R.id.tvBoxLocation);
         tvBoxStatus = findViewById(R.id.tvBoxStatus);
@@ -88,279 +82,254 @@ public class UnlockForDeliveryActivity extends AppCompatActivity {
 
     private void setupToolbar() {
         setSupportActionBar(toolbar);
-        if (getSupportActionBar() != null) {
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle("Unlock for Delivery");
-        }
         toolbar.setNavigationOnClickListener(v -> onBackPressed());
     }
 
     private void setupListeners() {
         btnUnlock.setOnClickListener(v -> confirmUnlock());
-        btnCancel.setOnClickListener(v -> finish());
+        // POINT 2: Confirmation on Cancel Button
+        btnCancel.setOnClickListener(v -> showCancelConfirmation());
     }
 
-    // --- NEW: BIOMETRIC SETUP ---
+    private void showCancelConfirmation() {
+        if (unlockCommitted) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Cancel Delivery?")
+                    .setMessage("The box is currently UNLOCKED. Canceling will re-lock the box and mark it as Available.\n\nAre you sure?")
+                    .setPositiveButton("Yes, Cancel", (dialog, which) -> cancelUnlock())
+                    .setNegativeButton("No", null)
+                    .show();
+        } else {
+            finish(); // Just close if we haven't done anything yet
+        }
+    }
+
     private void setupBiometrics() {
         executor = ContextCompat.getMainExecutor(this);
 
-        biometricPrompt = new BiometricPrompt(UnlockForDeliveryActivity.this, executor, new BiometricPrompt.AuthenticationCallback() {
-            @Override
-            public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
-                super.onAuthenticationError(errorCode, errString);
-                // Handle error (e.g., user canceled or too many attempts)
-                Toast.makeText(getApplicationContext(), "Authentication error: " + errString, Toast.LENGTH_SHORT).show();
-            }
+        biometricPrompt = new BiometricPrompt(this, executor,
+                new BiometricPrompt.AuthenticationCallback() {
+                    @Override
+                    public void onAuthenticationSucceeded(
+                            @NonNull BiometricPrompt.AuthenticationResult result) {
+                        unlockBoxSafely();
+                    }
+                });
 
-            @Override
-            public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
-                super.onAuthenticationSucceeded(result);
-                // SUCCESS! The user is verified. Now we unlock the box.
-                Toast.makeText(getApplicationContext(), "Identity Verified!", Toast.LENGTH_SHORT).show();
-                unlockBox();
-            }
-
-            @Override
-            public void onAuthenticationFailed() {
-                super.onAuthenticationFailed();
-                Toast.makeText(getApplicationContext(), "Authentication failed. Try again.", Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        // Setup the dialog that appears
         promptInfo = new BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Security Check")
-                .setSubtitle("Verify identity to unlock Box " + (boxNumber != null ? boxNumber : ""))
+                .setTitle("Verify Identity")
+                .setSubtitle("Unlock Box " + boxNumber)
                 .setNegativeButtonText("Cancel")
-                .setConfirmationRequired(false) // True = require user to click "Confirm" after face scan
                 .build();
     }
 
-    private void findAvailableBox() {
+    private void confirmUnlock() {
+        if (!isOnline()) {
+            showError("No internet connection");
+            return;
+        }
+
+        BiometricManager bm = BiometricManager.from(this);
+        if (bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                == BiometricManager.BIOMETRIC_SUCCESS) {
+            biometricPrompt.authenticate(promptInfo);
+        } else {
+            unlockBoxSafely();
+        }
+    }
+
+    private void unlockBoxSafely() {
         progressBar.setVisibility(View.VISIBLE);
         btnUnlock.setEnabled(false);
-        tvStatusMessage.setText("Finding available box...");
+
+        DatabaseReference boxRef = firebaseHelper.getDatabaseReference()
+                .child("boxes")
+                .child(boxId);
+
+        boxRef.runTransaction(new Transaction.Handler() {
+            @NonNull
+            @Override
+            public Transaction.Result doTransaction(@NonNull MutableData currentData) {
+                DeliveryBox box = currentData.getValue(DeliveryBox.class);
+                if (box == null) return Transaction.abort();
+
+                // If already unlocked by ME, allow re-entry (idempotency)
+                if ("unlocked_delivery".equals(box.getStatus()) && currentUserId.equals(box.getUnlockedBy())) {
+                    return Transaction.success(currentData);
+                }
+
+                if (!"available".equals(box.getStatus())) return Transaction.abort();
+
+                box.setStatus("unlocked_delivery");
+                box.setUnlockedBy(currentUserId);
+                box.setUnlockedAt(System.currentTimeMillis());
+
+                currentData.setValue(box);
+                return Transaction.success(currentData);
+            }
+
+            @Override
+            public void onComplete(DatabaseError error, boolean committed, DataSnapshot snapshot) {
+                progressBar.setVisibility(View.GONE);
+
+                if (!committed) {
+                    // Check if it failed because *I* already own it (re-entry)
+                    DeliveryBox box = snapshot.getValue(DeliveryBox.class);
+                    if (box != null && "unlocked_delivery".equals(box.getStatus()) && currentUserId.equals(box.getUnlockedBy())) {
+                        // All good, I'm just re-opening the screen
+                        unlockCommitted = true;
+                        updateUiForUnlockedState();
+                        return;
+                    }
+
+                    showError("Box already in use or unavailable");
+                    btnUnlock.setEnabled(true);
+                    return;
+                }
+
+                unlockCommitted = true;
+                updateUiForUnlockedState();
+                logHistory("unlocked");
+                notificationHelper.notifyBoxUnlocked(boxNumber);
+            }
+        });
+    }
+
+    private void updateUiForUnlockedState() {
+        tvBoxStatus.setText("Waiting for Rider");
+        tvBoxStatus.setTextColor(getColor(R.color.status_warning));
+        tvStatusMessage.setText("Box Unlocked. Monitoring sensors...");
+        tvInstructions.setText("The box is unlocked. Tell rider to place food inside.");
+        btnUnlock.setEnabled(false);
+        btnUnlock.setText("Unlocked");
+    }
+
+    private void startMonitoring() {
+        boxListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                DeliveryBox box = snapshot.getValue(DeliveryBox.class);
+                if (box == null) return;
+
+                // Re-sync UI state if I come back to screen
+                if ("unlocked_delivery".equals(box.getStatus()) && currentUserId.equals(box.getUnlockedBy())) {
+                    unlockCommitted = true;
+                    updateUiForUnlockedState();
+                }
+
+                if ("unlocked_delivery".equals(box.getStatus())
+                        && !currentUserId.equals(box.getUnlockedBy())) {
+                    showError("This box was taken by another user");
+                    finish();
+                }
+
+                if ("occupied".equals(box.getStatus()) && unlockCommitted) {
+                    logHistory("food_stored");
+                    notificationHelper.notifyFoodDelivered(boxNumber);
+                    showDoneDialog();
+                }
+            }
+
+            @Override public void onCancelled(@NonNull DatabaseError error) {}
+        };
 
         firebaseHelper.getDatabaseReference()
                 .child("boxes")
-                .orderByChild("status")
-                .equalTo("available")
-                .addListenerForSingleValueEvent(new ValueEventListener() {
+                .child(boxId)
+                .addValueEventListener(boxListener);
+    }
+
+    private void cancelUnlock() {
+        // Safe cancel: Transaction ensures we don't accidentally unlock someone else's box
+        firebaseHelper.getDatabaseReference()
+                .child("boxes")
+                .child(boxId)
+                .runTransaction(new Transaction.Handler() {
+                    @NonNull
                     @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        progressBar.setVisibility(View.GONE);
-                        if (snapshot.exists()) {
-                            for (DataSnapshot boxSnapshot : snapshot.getChildren()) {
-                                DeliveryBox box = boxSnapshot.getValue(DeliveryBox.class);
-                                if (box != null) {
-                                    boxId = boxSnapshot.getKey();
-                                    boxNumber = box.getBoxNumber();
-                                    boxLocation = "Box " + box.getBoxNumber();
+                    public Transaction.Result doTransaction(@NonNull MutableData data) {
+                        DeliveryBox box = data.getValue(DeliveryBox.class);
+                        if (box == null) return Transaction.abort();
 
-                                    // Update prompt info with new box number
-                                    promptInfo = new BiometricPrompt.PromptInfo.Builder()
-                                            .setTitle("Security Check")
-                                            .setSubtitle("Verify identity to unlock Box " + boxNumber)
-                                            .setNegativeButtonText("Cancel")
-                                            .setConfirmationRequired(false) // Added for consistency
-                                            .build();
+                        if (!currentUserId.equals(box.getUnlockedBy()))
+                            return Transaction.abort();
 
-                                    updateInitialUI();
-                                    startBoxMonitoring();
-                                    btnUnlock.setEnabled(true);
-                                    return;
-                                }
-                            }
-                        }
-                        showNoBoxesDialog();
+                        box.setStatus("available");
+                        box.setUnlockedBy(null);
+                        box.setUnlockedAt(0);
+                        data.setValue(box);
+                        return Transaction.success(data);
                     }
+
                     @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        progressBar.setVisibility(View.GONE);
+                    public void onComplete(DatabaseError error, boolean committed, DataSnapshot snapshot) {
                         finish();
                     }
                 });
-    }
-
-    private void showNoBoxesDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("No Boxes Available")
-                .setMessage("All boxes are currently occupied. Please try again later.")
-                .setPositiveButton("OK", (dialog, which) -> finish())
-                .setCancelable(false)
-                .show();
     }
 
     private void updateInitialUI() {
         tvBoxNumber.setText("Box " + boxNumber);
         tvBoxLocation.setText(boxLocation);
         tvBoxStatus.setText("Available");
-        tvBoxStatus.setTextColor(getColor(R.color.status_available));
-        tvStatusMessage.setText("Ready to unlock for delivery");
-        tvInstructions.setText("Tap 'Unlock Box' then tell your rider:\n\n\"Please place the food in Box " +
-                boxNumber + " at " + boxLocation + "\"");
+        tvStatusMessage.setText("Ready for delivery");
+        tvInstructions.setText("Ask rider to place food inside Box " + boxNumber);
     }
 
-    private void startBoxMonitoring() {
-        boxListener = new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                if (snapshot.exists()) {
-                    DeliveryBox box = snapshot.getValue(DeliveryBox.class);
-                    if (box != null) {
-                        handleBoxStatusChange(box);
-                    }
-                }
-            }
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
-        };
-        firebaseHelper.getDatabaseReference().child("boxes").child(boxId).addValueEventListener(boxListener);
-    }
-
-    private void handleBoxStatusChange(DeliveryBox box) {
-        tvBoxStatus.setText(box.getStatusText());
-
-        if ("unlocked".equals(box.getStatus()) && !isWaitingForFood) {
-            isWaitingForFood = true;
-            hasUnlockedBox = true;
-            btnUnlock.setEnabled(false);
-            btnUnlock.setText("Box Unlocked - Waiting for Food");
-            tvStatusMessage.setText("✓ Box is unlocked!");
-            tvStatusMessage.setTextColor(getColor(R.color.status_unlocked));
-            tvInstructions.setText("Tell your rider to place food in Box " + boxNumber +
-                    ". The box will automatically lock when food is detected.");
-        } else if ("occupied".equals(box.getStatus()) && isWaitingForFood) {
-            showFoodStoredSuccess();
-        }
-    }
-
-    private void confirmUnlock() {
-        // --- SAFETY CHECK: Verify if Biometrics are available on this device ---
-        BiometricManager biometricManager = BiometricManager.from(this);
-        int canAuthenticate = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG);
-
-        if (canAuthenticate == BiometricManager.BIOMETRIC_SUCCESS) {
-            // Case A: Hardware is ready and fingerprints are enrolled
-            new AlertDialog.Builder(this)
-                    .setTitle("Unlock Box")
-                    .setMessage("Unlock Box " + boxNumber + " for delivery?")
-                    .setPositiveButton("Authenticate & Unlock", (dialog, which) -> {
-                        biometricPrompt.authenticate(promptInfo);
-                    })
-                    .setNegativeButton("Cancel", null)
-                    .show();
-        } else {
-            // Case B: No hardware or no fingerprints enrolled - Fallback to standard
-            new AlertDialog.Builder(this)
-                    .setTitle("Unlock Box")
-                    .setMessage("Unlock Box " + boxNumber + " for delivery?")
-                    .setPositiveButton("Yes, Unlock", (dialog, which) -> {
-                        Toast.makeText(this, "Security check skipped (Biometrics not set up)", Toast.LENGTH_SHORT).show();
-                        unlockBox();
-                    })
-                    .setNegativeButton("Cancel", null)
-                    .show();
-        }
-    }
-
-    // This is now called ONLY after fingerprint success
-    private void unlockBox() {
-        progressBar.setVisibility(View.VISIBLE);
-        btnUnlock.setEnabled(false);
-
-        if (!isNetworkAvailable()) {
-            showOfflineDialog();
-            progressBar.setVisibility(View.GONE);
-            btnUnlock.setEnabled(true);
-            return;
-        }
-
-        String userId = firebaseHelper.getCurrentUserId();
-
-        firebaseHelper.getDatabaseReference()
-                .child("boxes")
-                .child(boxId)
-                .child("status")
-                .setValue("unlocked")
-                .addOnSuccessListener(aVoid -> {
-                    firebaseHelper.getDatabaseReference().child("boxes").child(boxId).child("unlockedBy").setValue(userId);
-                    firebaseHelper.getDatabaseReference().child("boxes").child(boxId).child("unlockedAt").setValue(System.currentTimeMillis());
-
-                    logHistory("unlocked");
-                    progressBar.setVisibility(View.GONE);
-
-                    // Notification handled by Activity/Helper
-                    if(notificationHelper != null) notificationHelper.notifyBoxUnlocked(boxNumber);
-                })
-                .addOnFailureListener(e -> {
-                    progressBar.setVisibility(View.GONE);
-                    btnUnlock.setEnabled(true);
-                    Toast.makeText(this, "Failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                });
-    }
-
-    private void showFoodStoredSuccess() {
-        logHistory("food_stored");
-        if(notificationHelper != null) notificationHelper.notifyFoodDelivered(boxNumber);
-
-        new AlertDialog.Builder(this)
-                .setTitle("✓ Food Stored!")
-                .setMessage("Your food has been delivered and the box is now secured.\n\nYou can retrieve it anytime from the dashboard.")
-                .setPositiveButton("Done", (dialog, which) -> finish())
-                .setCancelable(false)
-                .show();
-    }
-
-    private boolean isNetworkAvailable() {
-        android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-        android.net.NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
-        return activeNetwork != null && activeNetwork.isConnected();
-    }
-
-    private void showOfflineDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("⚠️ No Internet Connection")
-                .setMessage("You're currently offline. Please check your connection.")
-                .setPositiveButton("OK", null)
-                .show();
+    private boolean isOnline() {
+        ConnectivityManager cm =
+                (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        NetworkInfo net = cm.getActiveNetworkInfo();
+        return net != null && net.isConnected();
     }
 
     private void logHistory(String action) {
-        String userId = firebaseHelper.getCurrentUserId();
-        if (userId == null) return;
+        String uid = firebaseHelper.getCurrentUserId();
+        if (uid == null) return;
 
-        String historyId = firebaseHelper.getDatabaseReference().child("history").child(userId).push().getKey();
-        if (historyId != null) {
-            firebaseHelper.getDatabaseReference().child("history").child(userId).child(historyId).child("boxNumber").setValue(boxNumber);
-            firebaseHelper.getDatabaseReference().child("history").child(userId).child(historyId).child("action").setValue(action);
-            firebaseHelper.getDatabaseReference().child("history").child(userId).child(historyId).child("timestamp").setValue(System.currentTimeMillis());
+        DatabaseReference ref = firebaseHelper.getDatabaseReference()
+                .child("history")
+                .child(uid)
+                .push();
+
+        ref.child("boxNumber").setValue(boxNumber);
+        ref.child("action").setValue(action);
+        ref.child("timestamp").setValue(System.currentTimeMillis());
+    }
+
+    private void showDoneDialog() {
+        if (!isFinishing()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Delivery Completed")
+                    .setMessage("Food stored successfully. Box is now locked.")
+                    .setPositiveButton("OK", (d, w) -> finish())
+                    .setCancelable(false)
+                    .show();
+        }
+    }
+
+    private void showError(String msg) {
+        if (!isFinishing()) {
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
         }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (boxListener != null && boxId != null) {
-            firebaseHelper.getDatabaseReference().child("boxes").child(boxId).removeEventListener(boxListener);
-        }
-        if (handler != null) {
-            handler.removeCallbacksAndMessages(null);
+        if (boxListener != null) {
+            firebaseHelper.getDatabaseReference()
+                    .child("boxes")
+                    .child(boxId)
+                    .removeEventListener(boxListener);
         }
     }
 
+    // POINT 2: Handle Back Button
     @Override
     public void onBackPressed() {
-        if (hasUnlockedBox && isWaitingForFood) {
-            new AlertDialog.Builder(this)
-                    .setTitle("Cancel Delivery?")
-                    .setMessage("The box is unlocked. Cancel and re-lock?")
-                    .setPositiveButton("Yes, Cancel", (dialog, which) -> {
-                        firebaseHelper.getDatabaseReference().child("boxes").child(boxId).child("status").setValue("available")
-                                .addOnSuccessListener(unused -> finish());
-                    })
-                    .setNegativeButton("No", null)
-                    .show();
+        if (unlockCommitted) {
+            showCancelConfirmation();
         } else {
             super.onBackPressed();
         }

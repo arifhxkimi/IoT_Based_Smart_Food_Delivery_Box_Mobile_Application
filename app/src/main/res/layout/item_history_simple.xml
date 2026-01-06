@@ -5,9 +5,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="8dp"
-    app:cardCornerRadius="8dp"
+    app:cardCornerRadius="12dp"
     app:cardElevation="2dp"
-    app:cardBackgroundColor="@android:color/white">
+    android:background="?attr/selectableItemBackground">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -16,22 +16,24 @@
         android:padding="16dp"
         android:gravity="center_vertical">
 
-        <!-- Left Side: Action & Box -->
+        <!-- Left side: Action and Box -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical">
 
+            <!-- Action Text (Bold, larger) -->
             <TextView
                 android:id="@+id/tvAction"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Box Unlocked"
+                android:text="🔓 Unlocked for Delivery"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:textColor="#212121"/>
 
+            <!-- Box info (smaller, gray) -->
             <TextView
                 android:id="@+id/tvBox"
                 android:layout_width="wrap_content"
@@ -43,32 +45,16 @@
 
         </LinearLayout>
 
-        <!-- Right Side: Date & Time -->
-        <LinearLayout
+        <!-- Right side: Time (aligned to right) -->
+        <TextView
+            android:id="@+id/tvTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="end">
-
-            <TextView
-                android:id="@+id/tvDate"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Oct 24"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:textColor="#616161"/>
-
-            <TextView
-                android:id="@+id/tvTime"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="10:30 AM"
-                android:textSize="12sp"
-                android:textColor="#9E9E9E"
-                android:layout_marginTop="4dp"/>
-
-        </LinearLayout>
+            android:text="05:48 PM"
+            android:textSize="14sp"
+            android:textColor="#9E9E9E"
+            android:textStyle="bold"
+            android:layout_marginStart="8dp"/>
 
     </LinearLayout>
 

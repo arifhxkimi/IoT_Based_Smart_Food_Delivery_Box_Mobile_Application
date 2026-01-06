@@ -12,7 +12,7 @@ public class DeliveryBox {
     // --- Firebase Fields (Must match JSON keys exactly) ---
     private String boxId;
     private String boxNumber;
-    private String status;      // "available", "occupied", "unlocked"
+    private String status;      // "available", "occupied", "unlocked_delivery", "unlocked_retrieval"
     private boolean isPhysical;
     private boolean enabled;
     private long lastHeartbeat;
@@ -27,30 +27,18 @@ public class DeliveryBox {
 
     // --- 1. Constructors ---
 
-    // Empty constructor required for Firebase
     public DeliveryBox() {
-        // Initialize statistics to prevent NullPointerException if missing in DB
         this.statistics = new BoxStatistics();
     }
 
     // --- 2. Logic Helpers (For UI) ---
 
-    /**
-     * Checks if the ESP32 is online based on the last heartbeat.
-     * Threshold: 60 seconds (60000 ms).
-     */
     public boolean isOnline() {
         long currentTime = System.currentTimeMillis();
-        // If lastHeartbeat is 0, it's definitely offline
         if (lastHeartbeat == 0) return false;
-
-        // Check if heartbeat is within the last minute
         return (currentTime - lastHeartbeat) < 60000;
     }
 
-    /**
-     * Helper to get a display name like "Box 1"
-     */
     public String getName() {
         return "Box " + boxNumber;
     }
@@ -60,17 +48,24 @@ public class DeliveryBox {
     }
 
     /**
-     * Returns a user-friendly status text.
+     * Returns a user-friendly status text handling the new 4-state logic.
      */
     public String getStatusText() {
         if (isPhysical && !isOnline()) {
             return "OFFLINE";
         }
+
         if ("available".equalsIgnoreCase(status)) return "Available";
         if ("occupied".equalsIgnoreCase(status)) return "Occupied";
+
+        // NEW STATES
+        if ("unlocked_delivery".equalsIgnoreCase(status)) return "Waiting for Rider";
+        if ("unlocked_retrieval".equalsIgnoreCase(status)) return "Retrieving Food";
+
+        // Fallback for legacy "unlocked"
         if ("unlocked".equalsIgnoreCase(status)) return "Unlocked";
 
-        // Fallback: capitalize first letter
+        // Capitalize default
         if (status != null && !status.isEmpty()) {
             return status.substring(0, 1).toUpperCase() + status.substring(1);
         }
@@ -86,7 +81,12 @@ public class DeliveryBox {
         }
         if ("available".equalsIgnoreCase(status)) return "#4CAF50"; // Green
         if ("occupied".equalsIgnoreCase(status)) return "#9C27B0"; // Purple
-        if ("unlocked".equalsIgnoreCase(status)) return "#FF9800"; // Orange
+
+        // NEW STATES
+        if ("unlocked_delivery".equalsIgnoreCase(status)) return "#FF9800"; // Orange (Warning/Action Needed)
+        if ("unlocked_retrieval".equalsIgnoreCase(status)) return "#2196F3"; // Blue (User Action)
+
+        if ("unlocked".equalsIgnoreCase(status)) return "#FF9800"; // Legacy Orange
 
         return "#607D8B"; // Blue Grey (Default)
     }
@@ -132,7 +132,6 @@ public class DeliveryBox {
         private long lastUsed;
 
         public BoxStatistics() {
-            // Defaults
             this.totalDeliveries = 0;
             this.totalRetrievals = 0;
             this.lastUsed = 0;

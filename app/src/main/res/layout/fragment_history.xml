@@ -16,25 +16,65 @@
         android:padding="24dp"
         android:elevation="4dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Activity Log"
-            android:textColor="@android:color/white"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp"/>
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="History of all box interactions"
-            android:textColor="#E0E0E0"
-            android:textSize="14sp"/>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Activity Log"
+                    android:textColor="@android:color/white"
+                    android:textSize="24sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="4dp"/>
+
+                <TextView
+                    android:id="@+id/tvDateFilter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Showing all history"
+                    android:textColor="#E0E0E0"
+                    android:textSize="14sp"/>
+            </LinearLayout>
+
+            <!-- Calendar Button -->
+            <ImageButton
+                android:id="@+id/btnCalendar"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_calendar"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:padding="10dp"
+                app:tint="@android:color/white"
+                android:contentDescription="Pick Date"/>
+
+            <!-- Reset Button (Hidden by default) -->
+            <ImageButton
+                android:id="@+id/btnResetDate"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_close"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:padding="10dp"
+                app:tint="@android:color/white"
+                android:visibility="gone"
+                android:contentDescription="Reset Filter"/>
+
+
+        </LinearLayout>
 
     </LinearLayout>
 
-    <!-- Filter Chips (RENAMED FOR FUNCTIONAL ACCURACY) -->
+    <!-- Filter Chips (FIXED: Added Food Stored chip + emojis) -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -56,32 +96,40 @@
                 android:id="@+id/chipAll"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="All"
+                android:text="📋 All Actions"
                 android:checked="true"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
-            <!-- Renamed from Pending to Unlocks -->
             <com.google.android.material.chip.Chip
-                android:id="@+id/chipPending"
+                android:id="@+id/chipUnlocks"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Unlocks"
+                android:text="🔓 Unlocks"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
-            <!-- Renamed from In Box to Deliveries -->
+            <!-- FIXED: Added missing Food Stored chip -->
             <com.google.android.material.chip.Chip
-                android:id="@+id/chipInBox"
+                android:id="@+id/chipFoodStored"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Deliveries"
+                android:text="📥 Food Stored"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
-            <!-- Renamed from Completed to Retrievals -->
+            <!-- Note: "Deliveries" can be removed if redundant with "Food Stored" -->
+            <!-- Or keep it as an alias that filters to food_stored -->
             <com.google.android.material.chip.Chip
-                android:id="@+id/chipCompleted"
+                android:id="@+id/chipDeliveries"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Retrievals"
+                android:text="📦 Deliveries"
+                android:visibility="gone"
+                style="@style/Widget.MaterialComponents.Chip.Choice"/>
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipRetrievals"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="✅ Retrieved"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
         </com.google.android.material.chip.ChipGroup>
@@ -105,7 +153,7 @@
                 android:padding="16dp"
                 android:clipToPadding="false"/>
 
-            <!-- Empty State -->
+            <!-- FIXED: Empty State with dynamic message -->
             <LinearLayout
                 android:id="@+id/layoutEmpty"
                 android:layout_width="wrap_content"
@@ -113,29 +161,35 @@
                 android:layout_gravity="center"
                 android:orientation="vertical"
                 android:gravity="center"
+                android:padding="32dp"
                 android:visibility="gone">
 
                 <ImageView
-                    android:layout_width="100dp"
-                    android:layout_height="100dp"
+                    android:layout_width="120dp"
+                    android:layout_height="120dp"
                     android:src="@drawable/ic_empty_box"
-                    android:alpha="0.3"/>
+                    android:alpha="0.3"
+                    android:contentDescription="No activity"/>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="No activity yet"
-                    android:textSize="18sp"
+                    android:text="📭 No activities yet"
+                    android:textSize="20sp"
                     android:textStyle="bold"
-                    android:textColor="#9E9E9E"
+                    android:textColor="#757575"
                     android:layout_marginTop="16dp"/>
 
+                <!-- FIXED: Dynamic message TextView -->
                 <TextView
+                    android:id="@+id/tvEmptyMessage"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Events will appear here"
+                    android:text="Your delivery history will appear here"
                     android:textSize="14sp"
                     android:textColor="#BDBDBD"
+                    android:textAlignment="center"
+                    android:gravity="center"
                     android:layout_marginTop="8dp"/>
 
             </LinearLayout>

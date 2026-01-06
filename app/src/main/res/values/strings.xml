@@ -55,4 +55,30 @@
     <string name="box_unlocked_instruction">The box door is now unlocked. Please open it and collect your food. The delivery will be marked as completed automatically.</string>
     <string name="unlock_instruction">Tap the button below to unlock the box. You will have 2 minutes to collect your food before the box automatically locks again.</string>
 
+    <!-- FIXED: Updated terminology -->
+    <string name="boxes_empty">Empty</string>
+    <string name="boxes_has_food">Has Food</string>
+    <string name="total_deliveries">Total: %d deliveries</string>
+    <string name="total_deliveries_this_month">This Month: %d deliveries</string>
+
+    <!-- History -->
+    <string name="activity_log">Activity Log</string>
+    <string name="showing_all_history">Showing all history</string>
+    <string name="no_activity_yet">No activities yet</string>
+    <string name="no_activity_filter">No activities found for this filter</string>
+    <string name="no_activity_date">No activities found on this date</string>
+    <string name="try_changing_filters">Try changing the date or filters</string>
+
+    <!-- Filter Chips -->
+    <string name="filter_all">📋 All Actions</string>
+    <string name="filter_unlocks">🔓 Unlocks</string>
+    <string name="filter_food_stored">📥 Food Stored</string>
+    <string name="filter_deliveries">📦 Deliveries</string>
+    <string name="filter_retrievals">✅ Retrieved</string>
+
+    <!-- Action Types -->
+    <string name="action_unlocked">🔓 Unlocked for Delivery</string>
+    <string name="action_food_stored">📥 Food Stored</string>
+    <string name="action_retrieved">✅ Delivery Collected</string>
+
 </resources>

@@ -5,137 +5,119 @@
     android:id="@+id/cardView"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="16dp"
-    android:layout_marginStart="8dp"
-    android:layout_marginEnd="8dp"
+    android:layout_marginBottom="12dp"
+    android:layout_marginHorizontal="8dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     app:cardCornerRadius="16dp"
-    app:cardElevation="4dp"
-    app:strokeWidth="2dp"
-    app:strokeColor="#E0E0E0">
+    app:cardElevation="3dp"
+    app:cardBackgroundColor="@color/white"
+    app:strokeWidth="1dp"
+    app:strokeColor="#F0F0F0">
 
-    <LinearLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Header Row -->
+        <!-- 1. Box Icon (Left) -->
+        <FrameLayout
+            android:id="@+id/iconContainer"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:background="@drawable/circle_background"
+            android:backgroundTint="#F5F5F5"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
+
+            <ImageView
+                android:id="@+id/ivBoxIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_box"
+                app:tint="#616161"/>
+        </FrameLayout>
+
+        <!-- 2. Text Info (Middle) -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:orientation="vertical"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="8dp"
+            app:layout_constraintStart_toEndOf="@id/iconContainer"
+            app:layout_constraintEnd_toStartOf="@id/statusContainer"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
 
-            <!-- Box Icon Container -->
-            <FrameLayout
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:background="@drawable/circle_background"
-                android:backgroundTint="#F5F5F5">
-
-                <ImageView
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_box"
-                    app:tint="#424242"/>
-            </FrameLayout>
-
-            <!-- Box Info -->
-            <LinearLayout
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/tvBoxNumber"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="16dp">
+                android:text="Box 1"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#212121"/>
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/tvLocation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Tap to manage"
+                android:textSize="13sp"
+                android:textColor="#9E9E9E"
+                android:layout_marginTop="2dp"/>
 
-                    <TextView
-                        android:id="@+id/tvBoxNumber"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Box 1"
-                        android:textSize="20sp"
-                        android:textStyle="bold"
-                        android:textColor="#212121"/>
+            <!-- Optional: Online Badge (Small) -->
+            <TextView
+                android:id="@+id/tvPhysical"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="• ONLINE"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:textColor="#4CAF50"
+                android:visibility="gone"
+                android:layout_marginTop="2dp"/>
 
-                    <!-- Physical/Online Badge -->
-                    <TextView
-                        android:id="@+id/tvPhysical"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="ONLINE"
-                        android:textSize="10sp"
-                        android:textStyle="bold"
-                        android:textColor="#4CAF50"
-                        android:background="@drawable/badge_background"
-                        android:backgroundTint="#E8F5E9"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:paddingTop="4dp"
-                        android:paddingBottom="4dp"
-                        android:visibility="gone"/>
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvLocation"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Tap to manage"
-                    android:textSize="13sp"
-                    android:textColor="#757575"
-                    android:layout_marginTop="2dp"/>
-            </LinearLayout>
         </LinearLayout>
 
-        <!-- Divider -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#EEEEEE"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="12dp"/>
-
-        <!-- Status Row -->
+        <!-- 3. Status Pill (Right) -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:id="@+id/statusContainer"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/rounded_background"
-            android:backgroundTint="#FAFAFA"
-            android:padding="8dp">
+            android:gravity="center"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp"
+            android:background="@drawable/badge_background"
+            android:backgroundTint="#E8F5E9"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
 
             <ImageView
                 android:id="@+id/ivStatusIcon"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_lock"
-                app:tint="#757575"
-                android:layout_marginEnd="8dp"/>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Status: "
-                android:textSize="14sp"
-                android:textColor="#757575"/>
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_lock_open"
+                app:tint="#4CAF50"
+                android:layout_marginEnd="6dp"/>
 
             <TextView
                 android:id="@+id/tvStatus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Available"
-                android:textSize="16sp"
+                android:text="Ready"
+                android:textSize="12sp"
                 android:textStyle="bold"
                 android:textColor="#4CAF50"/>
         </LinearLayout>
 
-    </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
 </com.google.android.material.card.MaterialCardView>

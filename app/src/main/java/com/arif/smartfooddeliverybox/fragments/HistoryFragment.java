@@ -1,12 +1,10 @@
 package com.arif.smartfooddeliverybox.fragments;
 
 import android.os.Bundle;
-import android.text.format.DateUtils;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -21,261 +19,412 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import com.arif.smartfooddeliverybox.R;
 import com.arif.smartfooddeliverybox.utils.FirebaseHelper;
 import com.google.android.material.chip.ChipGroup;
+import com.google.android.material.datepicker.MaterialDatePicker;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.ValueEventListener;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 
 public class HistoryFragment extends Fragment {
 
-    private static final String TAG = "HistoryFragment";
-
-    private RecyclerView recyclerViewHistory;
-    private HistoryAdapter historyAdapter;
-
-    // We need TWO lists: one for all data, one for what is shown
-    private List<HistoryItem> allHistoryList;
-    private List<HistoryItem> displayedList;
-
+    private RecyclerView recyclerView;
     private SwipeRefreshLayout swipeRefresh;
     private LinearLayout layoutEmpty;
+    private TextView tvEmptyMessage; // NEW: For dynamic empty messages
     private ChipGroup chipGroupFilter;
+
+    private ImageButton btnCalendar, btnResetDate;
+    private TextView tvDateFilter;
 
     private FirebaseHelper firebaseHelper;
     private ValueEventListener historyListener;
 
+    private List<HistoryItem> allHistory = new ArrayList<>();
+    private List<HistoryListItem> displayList = new ArrayList<>();
+    private HistoryAdapter adapter;
+
+    private Long selectedDate = null;
+    private String currentActionFilter = "all"; // NEW: Track current filter
+
     @Nullable
     @Override
-    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
+                             @Nullable Bundle savedInstanceState) {
+
         View view = inflater.inflate(R.layout.fragment_history, container, false);
 
-        initViews(view);
-        setupRecyclerView();
-        setupFilters(); // NEW: Add filter logic
-        loadHistory();
+        firebaseHelper = FirebaseHelper.getInstance();
 
+        recyclerView = view.findViewById(R.id.recyclerViewDeliveries);
+        swipeRefresh = view.findViewById(R.id.swipeRefresh);
+        layoutEmpty = view.findViewById(R.id.layoutEmpty);
+        tvEmptyMessage = view.findViewById(R.id.tvEmptyMessage); // NEW
+        chipGroupFilter = view.findViewById(R.id.chipGroupFilter);
+        btnCalendar = view.findViewById(R.id.btnCalendar);
+        btnResetDate = view.findViewById(R.id.btnResetDate);
+        tvDateFilter = view.findViewById(R.id.tvDateFilter);
+
+        recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
+        adapter = new HistoryAdapter(displayList);
+        recyclerView.setAdapter(adapter);
+
+        swipeRefresh.setOnRefreshListener(this::loadHistory);
+
+        chipGroupFilter.setOnCheckedChangeListener((group, checkedId) -> applyFilters());
+
+        btnCalendar.setOnClickListener(v -> showDatePicker());
+        btnResetDate.setOnClickListener(v -> clearDateFilter());
+
+
+        loadHistory();
         return view;
     }
 
-    private void initViews(View view) {
-        firebaseHelper = FirebaseHelper.getInstance();
-
-        recyclerViewHistory = view.findViewById(R.id.recyclerViewDeliveries);
-        swipeRefresh = view.findViewById(R.id.swipeRefresh);
-        layoutEmpty = view.findViewById(R.id.layoutEmpty);
-        chipGroupFilter = view.findViewById(R.id.chipGroupFilter); // Bind the ChipGroup
-
-        swipeRefresh.setOnRefreshListener(this::loadHistory);
-    }
-
-    private void setupRecyclerView() {
-        allHistoryList = new ArrayList<>();
-        displayedList = new ArrayList<>();
-
-        // Adapter uses the displayedList
-        historyAdapter = new HistoryAdapter(displayedList);
-        recyclerViewHistory.setLayoutManager(new LinearLayoutManager(getContext()));
-        recyclerViewHistory.setAdapter(historyAdapter);
-    }
-
-    // NEW: Handle Chip Clicks
-    private void setupFilters() {
-        if (chipGroupFilter != null) {
-            chipGroupFilter.setOnCheckedChangeListener((group, checkedId) -> {
-                String filterType = "all";
-                if (checkedId == R.id.chipPending) filterType = "unlocked";
-                else if (checkedId == R.id.chipInBox) filterType = "food_stored";
-                else if (checkedId == R.id.chipCompleted) filterType = "retrieved";
-
-                applyFilter(filterType);
-            });
-        }
-    }
+    // ---------------- LOAD HISTORY ----------------
 
     private void loadHistory() {
-        if (firebaseHelper.getCurrentUserId() == null) {
-            swipeRefresh.setRefreshing(false);
-            return;
-        }
+        if (firebaseHelper.getCurrentUserId() == null) return;
 
         swipeRefresh.setRefreshing(true);
         String userId = firebaseHelper.getCurrentUserId();
 
         if (historyListener != null) {
-            firebaseHelper.getDatabaseReference().child("history").child(userId).removeEventListener(historyListener);
+            firebaseHelper.getDatabaseReference()
+                    .child("history").child(userId)
+                    .removeEventListener(historyListener);
         }
 
         historyListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
-                allHistoryList.clear();
+                allHistory.clear();
 
-                for (DataSnapshot historySnapshot : snapshot.getChildren()) {
-                    try {
-                        String action = historySnapshot.child("action").getValue(String.class);
-                        String boxNumber = historySnapshot.child("boxNumber").getValue(String.class);
+                for (DataSnapshot snap : snapshot.getChildren()) {
+                    String action = snap.child("action").getValue(String.class);
+                    String box = snap.child("boxNumber").getValue(String.class);
 
-                        // FIX SORTING: Robust timestamp parsing
-                        long timestamp = 0;
-                        Object tsObj = historySnapshot.child("timestamp").getValue();
+                    long ts = 0;
+                    Object tObj = snap.child("timestamp").getValue();
+                    if (tObj instanceof Long) ts = (Long) tObj;
+                    else if (tObj instanceof Double) ts = ((Double) tObj).longValue();
 
-                        if (tsObj instanceof Long) {
-                            timestamp = (Long) tsObj;
-                        } else if (tsObj instanceof Double) {
-                            timestamp = ((Double) tsObj).longValue();
-                        } else if (tsObj instanceof String) {
-                            try {
-                                timestamp = Long.parseLong((String) tsObj);
-                            } catch (NumberFormatException e) {
-                                timestamp = 0;
-                            }
-                        }
-
-                        if (action != null && boxNumber != null) {
-                            HistoryItem item = new HistoryItem(action, boxNumber, timestamp);
-                            allHistoryList.add(item);
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error parsing history item: " + e.getMessage());
+                    if (action != null && box != null) {
+                        allHistory.add(new HistoryItem(action, box, ts));
                     }
                 }
 
-                // FIX SORTING: Sort Newest First (Descending)
-                Collections.sort(allHistoryList, (o1, o2) -> Long.compare(o2.timestamp, o1.timestamp));
-
-                // Apply current filter (or default to 'all')
-                int checkedId = (chipGroupFilter != null) ? chipGroupFilter.getCheckedChipId() : -1;
-                String currentFilter = "all";
-                if (checkedId == R.id.chipPending) currentFilter = "unlocked";
-                else if (checkedId == R.id.chipInBox) currentFilter = "food_stored";
-                else if (checkedId == R.id.chipCompleted) currentFilter = "retrieved";
-
-                applyFilter(currentFilter);
+                Collections.sort(allHistory, (a, b) -> Long.compare(b.timestamp, a.timestamp));
+                applyFilters();
                 swipeRefresh.setRefreshing(false);
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 swipeRefresh.setRefreshing(false);
-                if (getContext() != null) {
-                    Toast.makeText(getContext(), "Error: " + error.getMessage(), Toast.LENGTH_SHORT).show();
-                }
+                Toast.makeText(getContext(), "Error loading history: " + error.getMessage(),
+                        Toast.LENGTH_SHORT).show();
             }
         };
 
-        firebaseHelper.getDatabaseReference().child("history").child(userId).addValueEventListener(historyListener);
+        firebaseHelper.getDatabaseReference()
+                .child("history").child(userId)
+                .addValueEventListener(historyListener);
     }
 
-    // NEW: Filter Logic
-    private void applyFilter(String filterType) {
-        displayedList.clear();
+    // ---------------- FILTERING (FIXED) ----------------
 
-        if ("all".equals(filterType)) {
-            displayedList.addAll(allHistoryList);
+    private void applyFilters() {
+        displayList.clear();
+
+        // FIXED: Determine action filter
+        currentActionFilter = "all";
+        int id = chipGroupFilter.getCheckedChipId();
+
+        if (id == R.id.chipUnlocks) {
+            currentActionFilter = "unlocked";
+        } else if (id == R.id.chipFoodStored) { // FIXED: Added missing Food Stored filter
+            currentActionFilter = "food_stored";
+        } else if (id == R.id.chipDeliveries) {
+            currentActionFilter = "food_stored"; // "Deliveries" means food was stored
+        } else if (id == R.id.chipRetrievals) {
+            currentActionFilter = "retrieved";
+        }
+
+        SimpleDateFormat dateHeaderFormat = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault());
+        String lastDate = "";
+
+        for (HistoryItem item : allHistory) {
+
+            // FIXED: Apply action filter correctly
+            if (!"all".equals(currentActionFilter) && !item.action.equals(currentActionFilter)) {
+                continue;
+            }
+
+            // FIXED: Apply date filter with proper timezone handling
+            if (selectedDate != null && !isSameDay(item.timestamp, selectedDate)) {
+                continue;
+            }
+
+            // Group by date header
+            String date = dateHeaderFormat.format(new Date(item.timestamp));
+
+            if (!date.equals(lastDate)) {
+                displayList.add(new HistoryListItem(date));
+                lastDate = date;
+            }
+
+            displayList.add(new HistoryListItem(item));
+        }
+
+        adapter.notifyDataSetChanged();
+        updateEmptyState();
+        updateHeaderCount();
+    }
+
+    // ---------------- DATE PICKER (FIXED) ----------------
+
+    private void showDatePicker() {
+        // Build date picker starting from today
+        long today = MaterialDatePicker.todayInUtcMilliseconds();
+
+        MaterialDatePicker<Long> picker = MaterialDatePicker.Builder.datePicker()
+                .setTitleText("Select Date")
+                .setSelection(selectedDate != null ? selectedDate : today)
+                .build();
+
+        picker.addOnPositiveButtonClickListener(selection -> {
+            selectedDate = selection;
+
+            // FIXED: Display selected date consistently
+            SimpleDateFormat sdf = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault());
+            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+
+            String dateStr = sdf.format(new Date(selection));
+            tvDateFilter.setText("📅 " + dateStr); // FIXED: Added emoji for clarity
+            btnResetDate.setVisibility(View.VISIBLE);
+
+            applyFilters();
+        });
+
+        picker.show(getParentFragmentManager(), "DATE_PICKER");
+    }
+
+    private void clearDateFilter() {
+        selectedDate = null;
+        tvDateFilter.setText("Showing all history");
+        btnResetDate.setVisibility(View.GONE);
+        applyFilters();
+    }
+
+    // FIXED: Proper date comparison (was causing 05 Jan showing 20 Dec bug)
+    // CORRECTED: Fixed timezone comparison
+    private boolean isSameDay(long timestamp, long selectedDateUTC) {
+        // Step 1: Convert Firebase timestamp to local calendar
+        Calendar itemCal = Calendar.getInstance();
+        itemCal.setTimeInMillis(timestamp);
+
+        // Step 2: Convert UTC selected date to local calendar
+        Calendar selectedCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        selectedCal.setTimeInMillis(selectedDateUTC);
+
+        // Step 3: Extract date components from UTC calendar
+        int selectedYear = selectedCal.get(Calendar.YEAR);
+        int selectedMonth = selectedCal.get(Calendar.MONTH);
+        int selectedDay = selectedCal.get(Calendar.DAY_OF_MONTH);
+
+        // Step 4: Create local calendar with selected date
+        Calendar localSelectedDate = Calendar.getInstance();
+        localSelectedDate.clear();
+        localSelectedDate.set(selectedYear, selectedMonth, selectedDay);
+
+        // Step 5: Compare year, month, and day
+        return itemCal.get(Calendar.YEAR) == localSelectedDate.get(Calendar.YEAR) &&
+                itemCal.get(Calendar.MONTH) == localSelectedDate.get(Calendar.MONTH) &&
+                itemCal.get(Calendar.DAY_OF_MONTH) == localSelectedDate.get(Calendar.DAY_OF_MONTH);
+    }
+
+    // FIXED: Dynamic empty state messages
+    private void updateEmptyState() {
+        if (displayList.isEmpty()) {
+            layoutEmpty.setVisibility(View.VISIBLE);
+            recyclerView.setVisibility(View.GONE);
+
+            // FIXED: Show contextual empty message
+            String message;
+            if (selectedDate != null && !"all".equals(currentActionFilter)) {
+                message = "No activities found for selected date and filter";
+            } else if (selectedDate != null) {
+                message = "No activities found on this date";
+            } else if (!"all".equals(currentActionFilter)) {
+                message = "No activities found for this filter";
+            } else {
+                message = "No activity yet\n\nYour delivery history will appear here";
+            }
+
+            if (tvEmptyMessage != null) {
+                tvEmptyMessage.setText(message);
+            }
+
         } else {
-            for (HistoryItem item : allHistoryList) {
-                if (item.action.equals(filterType)) {
-                    displayedList.add(item);
-                }
+            layoutEmpty.setVisibility(View.GONE);
+            recyclerView.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void updateHeaderCount() {
+        if (tvDateFilter == null) return;
+
+        int totalItems = allHistory.size();
+        int visibleItems = 0;
+
+        // Count non-header items in display list
+        for (HistoryListItem item : displayList) {
+            if (item.type == HistoryListItem.TYPE_EVENT) {
+                visibleItems++;
             }
         }
 
-        historyAdapter.notifyDataSetChanged();
-        updateEmptyState();
-    }
+        String headerText;
 
-    private void updateEmptyState() {
-        if (displayedList.isEmpty()) {
-            layoutEmpty.setVisibility(View.VISIBLE);
-            recyclerViewHistory.setVisibility(View.GONE);
+        if (selectedDate != null) {
+            SimpleDateFormat sdf = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault());
+            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+            String dateStr = sdf.format(new Date(selectedDate));
+
+            if (visibleItems == 0) {
+                headerText = "📅 " + dateStr + " - No activities";
+            } else {
+                headerText = "📅 " + dateStr + " - " + visibleItems + " activities";
+            }
         } else {
-            layoutEmpty.setVisibility(View.GONE);
-            recyclerViewHistory.setVisibility(View.VISIBLE);
+            if (totalItems == 0) {
+                headerText = "No activities yet";
+            } else if (!"all".equals(currentActionFilter)) {
+                headerText = visibleItems + " of " + totalItems + " activities";
+            } else {
+                headerText = totalItems + " total activities";
+            }
         }
+
+        tvDateFilter.setText(headerText);
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
         if (historyListener != null && firebaseHelper != null) {
-            firebaseHelper.getDatabaseReference().child("history").removeEventListener(historyListener);
+            firebaseHelper.getDatabaseReference()
+                    .child("history")
+                    .removeEventListener(historyListener);
         }
     }
 
-    // --- Inner Model Class ---
+    // ---------------- DATA CLASSES ----------------
+
     private static class HistoryItem {
         String action;
-        String boxNumber;
+        String box;
         long timestamp;
 
-        public HistoryItem(String action, String boxNumber, long timestamp) {
+        HistoryItem(String action, String box, long timestamp) {
             this.action = action;
-            this.boxNumber = boxNumber;
+            this.box = box;
             this.timestamp = timestamp;
         }
     }
 
-    // --- Adapter (Updated to use item_history_simple.xml) ---
-    private class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.HistoryViewHolder> {
+    private static class HistoryListItem {
+        static final int TYPE_DATE = 0;
+        static final int TYPE_EVENT = 1;
 
-        private List<HistoryItem> items;
-        private SimpleDateFormat dateFormat = new SimpleDateFormat("MMM dd, yyyy", Locale.getDefault());
-        private SimpleDateFormat timeFormat = new SimpleDateFormat("hh:mm a", Locale.getDefault());
+        int type;
+        String date;
+        HistoryItem item;
 
-        public HistoryAdapter(List<HistoryItem> items) {
+        HistoryListItem(String date) {
+            this.type = TYPE_DATE;
+            this.date = date;
+        }
+
+        HistoryListItem(HistoryItem item) {
+            this.type = TYPE_EVENT;
+            this.item = item;
+        }
+    }
+
+    // ---------------- ADAPTER (IMPROVED) ----------------
+
+    private class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+
+        private final List<HistoryListItem> items;
+        private final SimpleDateFormat timeFormat = new SimpleDateFormat("hh:mm a", Locale.getDefault());
+
+        HistoryAdapter(List<HistoryListItem> items) {
             this.items = items;
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return items.get(position).type;
         }
 
         @NonNull
         @Override
-        public HistoryViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            // Using your existing "item_history_simple" layout
-            View view = LayoutInflater.from(parent.getContext())
-                    .inflate(R.layout.item_history_simple, parent, false);
-            return new HistoryViewHolder(view);
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull HistoryViewHolder holder, int position) {
-            HistoryItem item = items.get(position);
-
-            holder.tvBox.setText("Box " + item.boxNumber);
-            holder.tvDate.setText(dateFormat.format(new Date(item.timestamp)));
-            holder.tvTime.setText(timeFormat.format(new Date(item.timestamp)));
-
-            // Styling based on action
-            switch (item.action) {
-                case "unlocked":
-                    holder.tvAction.setText("🔓 Unlocked for Delivery");
-                    setColors(holder, "#FF9800"); // Orange
-                    break;
-                case "food_stored":
-                    holder.tvAction.setText("📥 Food Stored");
-                    setColors(holder, "#9C27B0"); // Purple
-                    break;
-                case "retrieved":
-                    holder.tvAction.setText("✅ Delivery Collected");
-                    setColors(holder, "#4CAF50"); // Green
-                    break;
-                default:
-                    holder.tvAction.setText("📋 " + item.action);
-                    setColors(holder, "#757575");
-                    break;
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            if (viewType == HistoryListItem.TYPE_DATE) {
+                View v = LayoutInflater.from(parent.getContext())
+                        .inflate(R.layout.item_history_date, parent, false);
+                return new DateVH(v);
+            } else {
+                View v = LayoutInflater.from(parent.getContext())
+                        .inflate(R.layout.item_history_simple, parent, false);
+                return new EventVH(v);
             }
         }
 
-        private void setColors(HistoryViewHolder holder, String colorHex) {
-            try {
-                int color = android.graphics.Color.parseColor(colorHex);
-                holder.tvAction.setTextColor(color);
-            } catch (Exception e) {
-                // Ignore parsing errors
+        @Override
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int pos) {
+            HistoryListItem item = items.get(pos);
+
+            if (holder instanceof DateVH) {
+                ((DateVH) holder).tvDate.setText(item.date);
+            } else {
+                EventVH vh = (EventVH) holder;
+                HistoryItem hi = item.item;
+
+                vh.tvBox.setText("Box " + hi.box);
+                vh.tvTime.setText(timeFormat.format(new Date(hi.timestamp)));
+
+                // IMPROVED: Better color scheme and consistency
+                switch (hi.action) {
+                    case "unlocked":
+                        vh.tvAction.setText("🔓 Unlocked for Delivery");
+                        // Keep action text dark, only color the emoji/icon
+                        vh.tvAction.setTextColor(0xFF212121); // Dark text
+                        break;
+
+                    case "food_stored":
+                        vh.tvAction.setText("🍕 Food Stored");
+                        vh.tvAction.setTextColor(0xFF212121);
+                        break;
+
+                    case "retrieved":
+                        vh.tvAction.setText("✅ Delivery Collected");
+                        vh.tvAction.setTextColor(0xFF212121);
+                        break;
+
+                    default:
+                        vh.tvAction.setText(hi.action);
+                        vh.tvAction.setTextColor(0xFF757575);
+                }
             }
         }
 
@@ -284,16 +433,23 @@ public class HistoryFragment extends Fragment {
             return items.size();
         }
 
-        class HistoryViewHolder extends RecyclerView.ViewHolder {
-            // Updated IDs to match your item_history_simple.xml
-            TextView tvAction, tvBox, tvDate, tvTime;
+        class DateVH extends RecyclerView.ViewHolder {
+            TextView tvDate;
 
-            public HistoryViewHolder(@NonNull View itemView) {
-                super(itemView);
-                tvAction = itemView.findViewById(R.id.tvAction);
-                tvBox = itemView.findViewById(R.id.tvBox);
-                tvDate = itemView.findViewById(R.id.tvDate);
-                tvTime = itemView.findViewById(R.id.tvTime);
+            DateVH(View v) {
+                super(v);
+                tvDate = v.findViewById(R.id.tvDateHeader);
+            }
+        }
+
+        class EventVH extends RecyclerView.ViewHolder {
+            TextView tvAction, tvBox, tvTime;
+
+            EventVH(View v) {
+                super(v);
+                tvAction = v.findViewById(R.id.tvAction);
+                tvBox = v.findViewById(R.id.tvBox);
+                tvTime = v.findViewById(R.id.tvTime);
             }
         }
     }

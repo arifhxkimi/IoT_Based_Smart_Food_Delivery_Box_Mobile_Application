@@ -85,8 +85,8 @@ public class RetrieveFoodActivity extends AppCompatActivity {
     private void setupToolbar() {
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
-            getSupportActionBar().setTitle("Retrieve Food");
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+            getSupportActionBar().setTitle("Retrieve Food");
         }
         toolbar.setNavigationOnClickListener(v -> onBackPressed());
     }
@@ -130,17 +130,24 @@ public class RetrieveFoodActivity extends AppCompatActivity {
     private void handleBoxStatusChange(DeliveryBox box) {
         tvBoxStatus.setText(box.getStatusText());
 
-        if ("unlocked".equals(box.getStatus()) && isUnlocked && !hasRetrieved) {
+        // UPDATE: Check for specific retrieval status
+        if ("unlocked_retrieval".equals(box.getStatus()) && isUnlocked && !hasRetrieved) {
             btnUnlock.setEnabled(false);
             tvStatusMessage.setText("Box unlocked");
             tvInstructions.setText("Take your food and tap Done.");
+        }
+        // If user manually closes the box or sensor auto-locks it back to available
+        else if ("available".equals(box.getStatus()) && isUnlocked) {
+            hasRetrieved = true; // prevent double logic
+            Toast.makeText(this, "Box closed and secured.", Toast.LENGTH_SHORT).show();
+            finish();
         }
     }
 
     private void confirmUnlock() {
         new AlertDialog.Builder(this)
                 .setTitle("Unlock Box")
-                .setMessage("Unlock Box " + boxNumber + "?")
+                .setMessage("Unlock Box " + boxNumber + " to get your food?")
                 .setPositiveButton("Unlock", (d, w) -> unlockBox())
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -150,11 +157,12 @@ public class RetrieveFoodActivity extends AppCompatActivity {
         progressBar.setVisibility(View.VISIBLE);
         btnUnlock.setEnabled(false);
 
+        // UPDATE: Set status to "unlocked_retrieval"
         firebaseHelper.getDatabaseReference()
                 .child("boxes")
                 .child(boxId)
                 .child("status")
-                .setValue("unlocked")
+                .setValue("unlocked_retrieval")
                 .addOnSuccessListener(v -> {
                     isUnlocked = true;
                     progressBar.setVisibility(View.GONE);
@@ -165,7 +173,7 @@ public class RetrieveFoodActivity extends AppCompatActivity {
     private void showRetrieveDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Box Unlocked")
-                .setMessage("Take your food and tap Done.")
+                .setMessage("Please take your food. The box will auto-lock when you close it or tap Done.")
                 .setPositiveButton("Done", (d, w) -> completeRetrieval())
                 .setCancelable(false)
                 .show();
@@ -174,14 +182,15 @@ public class RetrieveFoodActivity extends AppCompatActivity {
     private void completeRetrieval() {
         hasRetrieved = true;
 
+        // Force reset to available if sensor hasn't done it yet
         firebaseHelper.getDatabaseReference()
                 .child("boxes")
                 .child(boxId)
                 .child("status")
                 .setValue("available");
 
-        incrementUserDeliveries();   // ✅ per account
-        incrementBoxDeliveries();    // ✅ optional
+        incrementUserDeliveries();
+        incrementBoxDeliveries();
         logHistory("retrieved");
 
         notificationHelper.notifyFoodRetrieved(boxNumber);
@@ -204,7 +213,7 @@ public class RetrieveFoodActivity extends AppCompatActivity {
                 .child("users")
                 .child(userId)
                 .child("statistics")
-                .child("totalDeliveries")
+                .child("totalRetrievals") // Fixed: was totalDeliveries
                 .get()
                 .addOnSuccessListener(snap -> {
                     int current = snap.exists() ? snap.getValue(Integer.class) : 0;
@@ -212,7 +221,7 @@ public class RetrieveFoodActivity extends AppCompatActivity {
                             .child("users")
                             .child(userId)
                             .child("statistics")
-                            .child("totalDeliveries")
+                            .child("totalRetrievals")
                             .setValue(current + 1);
                 });
     }
@@ -222,7 +231,7 @@ public class RetrieveFoodActivity extends AppCompatActivity {
                 .child("boxes")
                 .child(boxId)
                 .child("statistics")
-                .child("totalDeliveries")
+                .child("totalRetrievals") // Fixed: was totalDeliveries
                 .get()
                 .addOnSuccessListener(snap -> {
                     int current = snap.exists() ? snap.getValue(Integer.class) : 0;
@@ -230,7 +239,7 @@ public class RetrieveFoodActivity extends AppCompatActivity {
                             .child("boxes")
                             .child(boxId)
                             .child("statistics")
-                            .child("totalDeliveries")
+                            .child("totalRetrievals")
                             .setValue(current + 1);
                 });
     }
