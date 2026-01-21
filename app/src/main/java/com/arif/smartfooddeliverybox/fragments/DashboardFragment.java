@@ -2,6 +2,8 @@ package com.arif.smartfooddeliverybox.fragments;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -11,7 +13,6 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
-import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
@@ -28,45 +29,64 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.ValueEventListener;
 
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
-public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClickListener {
+public class DashboardFragment extends BaseInsetFragment implements BoxAdapter.OnBoxClickListener {
 
     private RecyclerView recyclerViewBoxes;
     private SwipeRefreshLayout swipeRefresh;
     private TextView tvEmptyState, tvAvailableCount, tvOccupiedCount, tvTotalDeliveries, tvLastUpdated, tvAppTitle;
+    private View viewStatusDot;
     private MaterialCardView cardStatistics;
     private FloatingActionButton fabAddDelivery;
 
     private BoxAdapter boxAdapter;
     private FirebaseHelper firebaseHelper;
-    private List<DeliveryBox> boxList;
+    private final List<DeliveryBox> boxList = new ArrayList<>();
     private ValueEventListener boxesListener;
 
-    private int availableCount = 0;
-    private int occupiedCount = 0;
-    private int totalDeliveries = 0;
-    private boolean offlineWarningShown = false;
+    private int emptyCount = 0;
+    private int hasFoodCount = 0;
+
+    // Cache so UI updates even if Firebase doesn't change
+    private boolean hasAnyPhysical = false;
+    private boolean anyPhysicalOnlineCached = false;
+    private long latestLastUsed = 0;
+
+    private static final long UI_REFRESH_MS = 5000;
+
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable statusRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            refreshLiveOfflineFromCachedData();
+            uiHandler.postDelayed(this, UI_REFRESH_MS);
+        }
+    };
+
+    private static final long HEARTBEAT_THRESHOLD_MS = 15_000;
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
+
         View view = inflater.inflate(R.layout.fragment_dashboard, container, false);
 
+        // ✅ Fix status bar overlap globally for this fragment
+        applyStatusBarInset(view);
+
         firebaseHelper = FirebaseHelper.getInstance();
-        boxList = new ArrayList<>();
 
         initViews(view);
         setupRecyclerView();
         setupSwipeRefresh();
         setupFab();
-        loadBoxes();
+        setupAdminMenu();
 
+        loadBoxes();
         return view;
     }
 
@@ -78,11 +98,10 @@ public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClick
         tvOccupiedCount = view.findViewById(R.id.tvOccupiedCount);
         tvTotalDeliveries = view.findViewById(R.id.tvTotalDeliveries);
         tvLastUpdated = view.findViewById(R.id.tvLastUpdated);
+        viewStatusDot = view.findViewById(R.id.viewStatusDot);
         cardStatistics = view.findViewById(R.id.cardStatistics);
         fabAddDelivery = view.findViewById(R.id.fabAddDelivery);
         tvAppTitle = view.findViewById(R.id.tvAppTitle);
-
-        setupAdminMenu();
     }
 
     private void setupRecyclerView() {
@@ -95,173 +114,266 @@ public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClick
         swipeRefresh.setOnRefreshListener(this::loadBoxes);
     }
 
-    // POINT 4: Fixed Smart Plus Button
     private void setupFab() {
-        if (fabAddDelivery != null) {
-            fabAddDelivery.setOnClickListener(v -> {
-                DeliveryBox bestBox = null;
-                DeliveryBox offlineBox = null;
+        fabAddDelivery.setOnClickListener(v -> {
 
-                // Loop to find the best candidate
-                for (DeliveryBox box : boxList) {
-                    if (box.isAvailable() && box.isEnabled()) {
-                        // Check logic: If it's physical, it should be online.
-                        // But if it's the only one we have, we might accept it (handled below).
-                        boolean isOnline = !box.isPhysical() || box.isOnline();
+            if (hasAnyPhysical && !anyPhysicalOnlineCached) {
+                Toast.makeText(getContext(),
+                        "Devices offline. Turn on ESP32 + WiFi then refresh.",
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
 
-                        if (isOnline) {
-                            bestBox = box;
-                            break; // Found an Online & Available box! Priority #1.
-                        } else if (offlineBox == null) {
-                            offlineBox = box; // Found an Offline & Available box. Priority #2.
-                        }
-                    }
+            // ✅ pick first available box that is NOT locked to another user
+            for (DeliveryBox box : boxList) {
+                if (box == null) continue;
+                if (!box.isEnabled()) continue;
+
+                if (box.isAvailable() && !isLockedToAnotherUser(box)) {
+                    launchUnlockActivity(box);
+                    return;
                 }
+            }
 
-                if (bestBox != null) {
-                    // Priority 1: Launch immediately
-                    launchUnlockActivity(bestBox);
-                } else if (offlineBox != null) {
-                    // Priority 2: Show offline warning (User can choose to proceed)
-                    showOfflineDialog(offlineBox);
-                } else {
-                    // No boxes available at all
-                    Toast.makeText(getContext(), "No boxes available. Please wait for a slot.", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
+            Toast.makeText(getContext(), "No available boxes at the moment", Toast.LENGTH_SHORT).show();
+        });
     }
 
     private void loadBoxes() {
         swipeRefresh.setRefreshing(true);
 
         if (boxesListener != null) {
-            firebaseHelper.getDatabaseReference().child("boxes").removeEventListener(boxesListener);
+            firebaseHelper.getDatabaseReference()
+                    .child("boxes")
+                    .removeEventListener(boxesListener);
         }
 
         boxesListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+
                 boxList.clear();
-                availableCount = 0;
-                occupiedCount = 0;
-                totalDeliveries = 0;
+                emptyCount = 0;
+                hasFoodCount = 0;
+
+                hasAnyPhysical = false;
+                latestLastUsed = 0;
 
                 for (DataSnapshot boxSnapshot : snapshot.getChildren()) {
                     DeliveryBox box = boxSnapshot.getValue(DeliveryBox.class);
+                    if (box == null) continue;
+                    if (!box.isEnabled()) continue;
 
-                    if (box != null && box.isEnabled()) {
-                        box.setBoxId(boxSnapshot.getKey());
-                        boxList.add(box);
+                    box.setBoxId(boxSnapshot.getKey());
+                    boxList.add(box);
 
-                        if (box.isAvailable()) {
-                            availableCount++;
-                        } else if ("occupied".equals(box.getStatus())) {
-                            occupiedCount++;
-                        }
+                    String status = box.getStatus();
+                    if ("idle".equalsIgnoreCase(status) || "available".equalsIgnoreCase(status)) {
+                        emptyCount++;
+                    } else if ("occupied".equalsIgnoreCase(status)) {
+                        hasFoodCount++;
+                    }
 
-                        if (box.getStatistics() != null) {
-                            totalDeliveries += box.getStatistics().getTotalDeliveries();
-                        }
+                    if (box.isPhysical()) hasAnyPhysical = true;
+
+                    if (box.getStatistics() != null) {
+                        long lastUsed = box.getStatistics().getLastUsed();
+                        if (lastUsed > latestLastUsed) latestLastUsed = lastUsed;
                     }
                 }
 
-                updateStatistics();
-                SimpleDateFormat sdf = new SimpleDateFormat("hh:mm a", Locale.getDefault());
-                if (tvLastUpdated != null) {
-                    tvLastUpdated.setText("Updated: " + sdf.format(new Date()));
-                }
+                updateCounts();
+                updateLastUsed(latestLastUsed);
+
+                refreshLiveOfflineFromCachedData();
 
                 boxAdapter.notifyDataSetChanged();
                 updateEmptyState();
                 swipeRefresh.setRefreshing(false);
-                checkOfflineBoxes();
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 swipeRefresh.setRefreshing(false);
-                if (getContext() != null) Toast.makeText(getContext(), "Error: " + error.getMessage(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), "Error: " + error.getMessage(), Toast.LENGTH_SHORT).show();
             }
         };
 
-        firebaseHelper.getDatabaseReference().child("boxes").addValueEventListener(boxesListener);
+        firebaseHelper.getDatabaseReference()
+                .child("boxes")
+                .addValueEventListener(boxesListener);
     }
 
-    private void updateStatistics() {
-        if (tvAvailableCount != null) tvAvailableCount.setText(availableCount + " Available");
-        if (tvOccupiedCount != null) tvOccupiedCount.setText(occupiedCount + " Occupied");
-        if (tvTotalDeliveries != null) tvTotalDeliveries.setText("Total: " + totalDeliveries + " deliveries");
+    private void refreshLiveOfflineFromCachedData() {
+        boolean anyPhysicalOnline = false;
+
+        long now = System.currentTimeMillis();
+
+        for (DeliveryBox box : boxList) {
+            if (box == null) continue;
+            if (!box.isPhysical()) continue;
+
+            long hb = box.getLastHeartbeat();
+            if (hb > 0) {
+                long diff = now - hb;
+                if (diff < 0) diff = 0;
+                if (diff < HEARTBEAT_THRESHOLD_MS) {
+                    anyPhysicalOnline = true;
+                    break;
+                }
+            }
+        }
+
+        anyPhysicalOnlineCached = anyPhysicalOnline;
+        updateDeviceBadge(hasAnyPhysical, anyPhysicalOnline);
+
+        if (boxAdapter != null) boxAdapter.notifyDataSetChanged();
+    }
+
+    private void updateCounts() {
+        if (tvAvailableCount != null) tvAvailableCount.setText(emptyCount + " Empty");
+        if (tvOccupiedCount != null) tvOccupiedCount.setText(hasFoodCount + " Has Food");
+    }
+
+    private void updateDeviceBadge(boolean hasAnyPhysical, boolean anyPhysicalOnline) {
+        if (tvLastUpdated == null || viewStatusDot == null) return;
+
+        if (!hasAnyPhysical) {
+            tvLastUpdated.setText("No device connected");
+            viewStatusDot.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF9E9E9E));
+            return;
+        }
+
+        if (anyPhysicalOnline) {
+            tvLastUpdated.setText("Live");
+            viewStatusDot.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
+        } else {
+            tvLastUpdated.setText("Devices Offline");
+            viewStatusDot.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336));
+        }
+    }
+
+    private void updateLastUsed(long lastUsedTimestamp) {
+        if (tvTotalDeliveries == null) return;
+
+        if (lastUsedTimestamp <= 0) {
+            tvTotalDeliveries.setText("Last used: Never");
+            return;
+        }
+
+        long diffMillis = System.currentTimeMillis() - lastUsedTimestamp;
+        if (diffMillis < 0) diffMillis = 0;
+
+        long minutes = TimeUnit.MILLISECONDS.toMinutes(diffMillis);
+        long hours = TimeUnit.MILLISECONDS.toHours(diffMillis);
+        long days = TimeUnit.MILLISECONDS.toDays(diffMillis);
+
+        String text;
+        if (minutes < 1) text = "Just now";
+        else if (minutes < 60) text = minutes + " min ago";
+        else if (hours < 24) text = hours + " hours ago";
+        else text = days + " days ago";
+
+        tvTotalDeliveries.setText("Last used: " + text);
     }
 
     private void updateEmptyState() {
         boolean isEmpty = boxList.isEmpty();
+
         if (tvEmptyState != null) tvEmptyState.setVisibility(isEmpty ? View.VISIBLE : View.GONE);
-        recyclerViewBoxes.setVisibility(isEmpty ? View.GONE : View.VISIBLE);
+        if (recyclerViewBoxes != null) recyclerViewBoxes.setVisibility(isEmpty ? View.GONE : View.VISIBLE);
         if (cardStatistics != null) cardStatistics.setVisibility(isEmpty ? View.GONE : View.VISIBLE);
     }
 
-    private void checkOfflineBoxes() {
-        if (offlineWarningShown) return;
-        for (DeliveryBox box : boxList) {
-            if (box.isPhysical() && !box.isOnline()) {
-                offlineWarningShown = true;
-                Toast.makeText(getContext(), "⚠️ " + box.getName() + " is currently OFFLINE", Toast.LENGTH_LONG).show();
-                break;
-            }
+    // =========================
+    // ✅ OWNERSHIP PROTECTION (CODE-ONLY)
+    // =========================
+
+    private boolean isInUseStatus(String status) {
+        if (status == null) return false;
+        status = status.toLowerCase();
+
+        return status.equals("occupied")
+                || status.equals("unlocked_for_delivery")
+                || status.equals("unlocked_delivery")
+                || status.equals("delivery_detected")
+                || status.equals("unlocked_for_retrieval")
+                || status.equals("unlocked_retrieval")
+                || status.equals("retrieval_in_progress");
+    }
+
+    /**
+     * Returns true if box is currently in-use by another user.
+     * Uses your existing field: unlockedBy
+     */
+    private boolean isLockedToAnotherUser(DeliveryBox box) {
+        String uid = firebaseHelper.getCurrentUserId();
+        if (uid == null) return true;
+
+        String status = box.getStatus();
+        if (!isInUseStatus(status)) return false;
+
+        String owner = box.getUnlockedBy();
+        if (owner == null || owner.trim().isEmpty()) {
+            // If box is "in use" but owner missing, be safe: block
+            return true;
         }
+
+        return !owner.equals(uid);
     }
 
     @Override
     public void onBoxClick(DeliveryBox box) {
         if (box == null || getContext() == null) return;
 
-        // 1. Check Offline
-        if (box.isPhysical() && !box.isOnline()) {
-            showOfflineDialog(box);
+        if (hasAnyPhysical && !anyPhysicalOnlineCached) {
+            Toast.makeText(getContext(),
+                    "Devices offline. Turn on ESP32 + WiFi then refresh.",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // ✅ BLOCK other users
+        if (isLockedToAnotherUser(box)) {
+            Toast.makeText(getContext(),
+                    "This box is currently in use by another user.",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
 
         String status = box.getStatus();
-        String currentUserId = firebaseHelper.getCurrentUserId();
+        if (status == null) status = "";
 
-        // POINT 1 & 3: Handle Access Control & Re-entry
-        if ("available".equals(status)) {
-            launchUnlockActivity(box);
-        }
-        else if ("occupied".equals(status)) {
-            launchRetrieveActivity(box);
-        }
-        else if ("unlocked_delivery".equals(status)) {
-            if (currentUserId != null && currentUserId.equals(box.getUnlockedBy())) {
-                Toast.makeText(getContext(), "Resuming your delivery session...", Toast.LENGTH_SHORT).show();
+        switch (status.toLowerCase()) {
+            case "idle":
+            case "available":
                 launchUnlockActivity(box);
-            } else {
-                Toast.makeText(getContext(), "⛔ Box is currently waiting for a rider (User: " + getSafeUid(box.getUnlockedBy()) + ")", Toast.LENGTH_SHORT).show();
-            }
-        }
-        else if ("unlocked_retrieval".equals(status)) {
-            if (currentUserId != null && currentUserId.equals(box.getUnlockedBy())) {
-                launchRetrieveActivity(box);
-            } else {
-                Toast.makeText(getContext(), "⛔ Box is currently being retrieved", Toast.LENGTH_SHORT).show();
-            }
-        }
-        else {
-            Toast.makeText(getContext(), "Status: " + box.getStatusText(), Toast.LENGTH_SHORT).show();
-        }
-    }
+                break;
 
-    private String getSafeUid(String uid) {
-        if(uid == null) return "Unknown";
-        return uid.substring(0, Math.min(uid.length(), 5)) + "...";
+            case "occupied":
+                launchRetrieveActivity(box);
+                break;
+
+            case "unlocked_for_delivery":
+            case "unlocked_delivery":
+                launchUnlockActivity(box);
+                break;
+
+            case "unlocked_for_retrieval":
+            case "unlocked_retrieval":
+                launchRetrieveActivity(box);
+                break;
+
+            default:
+                Toast.makeText(getContext(), "Status: " + box.getStatusText(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void launchUnlockActivity(DeliveryBox box) {
         Intent intent = new Intent(getContext(), UnlockForDeliveryActivity.class);
         intent.putExtra("boxId", box.getBoxId());
         intent.putExtra("boxNumber", box.getBoxNumber());
-        intent.putExtra("boxLocation", box.getName());
+        intent.putExtra("boxLocation", box.getNameSafe());
         startActivity(intent);
     }
 
@@ -269,55 +381,66 @@ public class DashboardFragment extends Fragment implements BoxAdapter.OnBoxClick
         Intent intent = new Intent(getContext(), RetrieveFoodActivity.class);
         intent.putExtra("boxId", box.getBoxId());
         intent.putExtra("boxNumber", box.getBoxNumber());
-        intent.putExtra("boxLocation", box.getName());
+        intent.putExtra("boxLocation", box.getNameSafe());
         startActivity(intent);
     }
 
-    private void showOfflineDialog(DeliveryBox box) {
-        new AlertDialog.Builder(requireContext())
-                .setTitle("⚠️ Box Offline")
-                .setMessage(box.getName() + " is offline.\nCheck power or WiFi.")
-                .setPositiveButton("OK", null)
-                .setNeutralButton("Debug", (d, w) -> launchUnlockActivity(box))
-                .show();
-    }
-
-    // --- Admin Menu Logic ---
     private void setupAdminMenu() {
-        if (tvAppTitle != null) {
-            tvAppTitle.setOnLongClickListener(v -> {
-                showAdminDialog();
-                return true;
-            });
-        }
+        if (tvAppTitle == null) return;
+
+        tvAppTitle.setOnLongClickListener(v -> {
+            String[] options = {"Force Reset All Boxes", "Cancel"};
+            new AlertDialog.Builder(requireContext())
+                    .setTitle("🛠 Admin Maintenance")
+                    .setItems(options, (d, which) -> {
+                        if (which == 0) {
+                            for (DeliveryBox box : boxList) {
+                                if (box == null || box.getBoxId() == null) continue;
+
+                                // NOTE: This bypasses ownership logic. Use carefully in demo.
+                                firebaseHelper.getDatabaseReference()
+                                        .child("boxes")
+                                        .child(box.getBoxId())
+                                        .child("status")
+                                        .setValue("available");
+
+                                firebaseHelper.getDatabaseReference()
+                                        .child("boxes")
+                                        .child(box.getBoxId())
+                                        .child("unlockedBy")
+                                        .setValue(null);
+                            }
+                            Toast.makeText(getContext(), "Reset sent", Toast.LENGTH_SHORT).show();
+                        }
+                    })
+                    .show();
+            return true;
+        });
     }
 
-    private void showAdminDialog() {
-        String[] options = {"Force Reset All Boxes", "Cancel"};
-        new AlertDialog.Builder(requireContext())
-                .setTitle("🛠️ Admin Maintenance")
-                .setItems(options, (dialog, which) -> {
-                    if (which == 0) {
-                        for(DeliveryBox box : boxList) forceBoxStatus(box, "available");
-                    }
-                })
-                .show();
+    @Override
+    public void onResume() {
+        super.onResume();
+        uiHandler.removeCallbacks(statusRefreshRunnable);
+        uiHandler.post(statusRefreshRunnable);
     }
 
-    private void forceBoxStatus(DeliveryBox box, String status) {
-        firebaseHelper.getDatabaseReference()
-                .child("boxes")
-                .child(box.getBoxId())
-                .child("status")
-                .setValue(status)
-                .addOnSuccessListener(aVoid -> Toast.makeText(getContext(), "Status updated", Toast.LENGTH_SHORT).show());
+    @Override
+    public void onPause() {
+        super.onPause();
+        uiHandler.removeCallbacks(statusRefreshRunnable);
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+
+        uiHandler.removeCallbacks(statusRefreshRunnable);
+
         if (boxesListener != null) {
-            firebaseHelper.getDatabaseReference().child("boxes").removeEventListener(boxesListener);
+            firebaseHelper.getDatabaseReference()
+                    .child("boxes")
+                    .removeEventListener(boxesListener);
         }
     }
 }

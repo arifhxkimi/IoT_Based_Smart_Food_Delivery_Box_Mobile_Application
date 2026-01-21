@@ -15,7 +15,7 @@ import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.EmailAuthProvider;
 import com.google.firebase.auth.FirebaseUser;
 
-public class ChangePasswordActivity extends AppCompatActivity {
+public class ChangePasswordActivity extends BaseInsetActivity {
 
     private MaterialToolbar toolbar;
     private TextInputEditText etCurrentPassword, etNewPassword, etConfirmPassword;
@@ -29,6 +29,8 @@ public class ChangePasswordActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_change_password);
+
+        applyStatusBarInset();
 
         firebaseHelper = FirebaseHelper.getInstance();
         currentUser = firebaseHelper.getCurrentUser();

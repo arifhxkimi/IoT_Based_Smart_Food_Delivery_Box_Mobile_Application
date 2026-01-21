@@ -31,18 +31,18 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Smart Delivery Boxes"
+                    android:textColor="@android:color/white"
                     android:textSize="22sp"
-                    android:textStyle="bold"
-                    android:textColor="@android:color/white"/>
+                    android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Manage your deliveries securely"
-                    android:textSize="14sp"
-                    android:textColor="@android:color/white"
+                    android:layout_marginTop="4dp"
                     android:alpha="0.85"
-                    android:layout_marginTop="4dp"/>
+                    android:text="Manage your deliveries securely"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -65,6 +65,7 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
+                <!-- TITLE + LIVE STATUS -->
                 <RelativeLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -78,20 +79,40 @@
                         android:textStyle="bold"
                         android:textColor="#212121"/>
 
-                    <!-- LAST UPDATED -->
-                    <TextView
-                        android:id="@+id/tvLastUpdated"
+                    <LinearLayout
+                        android:id="@+id/layoutDeviceStatus"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_alignParentEnd="true"
-                        android:text="Updating..."
-                        android:textSize="12sp"
-                        android:textColor="#757575"
-                        android:drawablePadding="4dp"
-                        app:drawableStartCompat="@drawable/ic_sync"
-                        app:drawableTint="#757575"/>
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:layout_width="16dp"
+                            android:layout_height="16dp"
+                            android:src="@drawable/ic_sync"
+                            android:tint="#757575"
+                            android:layout_marginEnd="6dp"/>
+
+                        <View
+                            android:id="@+id/viewStatusDot"
+                            android:layout_width="12dp"
+                            android:layout_height="12dp"
+                            android:layout_marginEnd="8dp"
+                            android:background="@drawable/dot_circle"
+                            android:backgroundTint="#9E9E9E"/>
+
+                        <TextView
+                            android:id="@+id/tvLastUpdated"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Checking..."
+                            android:textSize="12sp"
+                            android:textColor="#757575"/>
+                    </LinearLayout>
                 </RelativeLayout>
 
+                <!-- COUNTS -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -121,7 +142,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Available"
+                            android:text="Empty"
                             android:textSize="12sp"
                             android:textColor="#2E7D32"/>
                     </LinearLayout>
@@ -150,12 +171,13 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Occupied"
+                            android:text="Has Food"
                             android:textSize="12sp"
                             android:textColor="#7B1FA2"/>
                     </LinearLayout>
                 </LinearLayout>
 
+                <!-- DIVIDER -->
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
@@ -163,11 +185,12 @@
                     android:layout_marginTop="16dp"
                     android:layout_marginBottom="12dp"/>
 
+                <!-- LAST USED -->
                 <TextView
                     android:id="@+id/tvTotalDeliveries"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Total lifetime deliveries: 0"
+                    android:text="Last used: Loading..."
                     android:textSize="13sp"
                     android:textColor="#757575"
                     android:gravity="center"/>
@@ -205,9 +228,10 @@
                     android:visibility="gone"/>
             </FrameLayout>
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
     </LinearLayout>
 
-    <!-- ================= FIXED FAB ================= -->
+    <!-- ================= FAB ================= -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fabAddDelivery"
         android:layout_width="wrap_content"
@@ -217,9 +241,8 @@
         android:contentDescription="Add Delivery"
         android:src="@drawable/ic_add"
         app:tint="@android:color/white"
-        app:backgroundTint="#6200EE"
+        app:backgroundTint="@color/primary"
         app:elevation="6dp"
-        app:pressedTranslationZ="12dp"
         app:borderWidth="0dp"/>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

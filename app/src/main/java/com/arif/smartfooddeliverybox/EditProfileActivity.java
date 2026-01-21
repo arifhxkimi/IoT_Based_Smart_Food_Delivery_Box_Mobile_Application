@@ -28,8 +28,10 @@ import com.google.firebase.database.ValueEventListener;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
-public class EditProfileActivity extends AppCompatActivity {
+public class EditProfileActivity extends BaseInsetActivity {
 
     private MaterialToolbar toolbar;
     private ImageView ivProfile, btnChangePhoto;
@@ -45,6 +47,8 @@ public class EditProfileActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_edit_profile);
+
+        applyStatusBarInset();
 
         firebaseHelper = FirebaseHelper.getInstance();
         userId = firebaseHelper.getCurrentUserId();
@@ -92,7 +96,7 @@ public class EditProfileActivity extends AppCompatActivity {
             pickImageLauncher.launch(intent);
         });
 
-        // 2. Click image to pick image (UX improvement)
+        // 2. Click image itself to pick image
         ivProfile.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
             pickImageLauncher.launch(intent);
@@ -122,8 +126,8 @@ public class EditProfileActivity extends AppCompatActivity {
     );
 
     private String encodeImage(Bitmap bitmap) {
-        // Resize image to avoid "String too long" errors in Firebase
-        int previewWidth = 300;
+        // Resize image to ensure it uploads quickly and fits in DB
+        int previewWidth = 400;
         int previewHeight = bitmap.getHeight() * previewWidth / bitmap.getWidth();
         Bitmap previewBitmap = Bitmap.createScaledBitmap(bitmap, previewWidth, previewHeight, false);
 
@@ -193,20 +197,27 @@ public class EditProfileActivity extends AppCompatActivity {
         progressBar.setVisibility(View.VISIBLE);
         btnSave.setEnabled(false);
 
-        // Update fields individually to avoid overwriting other data
-        firebaseHelper.getUserRef(userId).child("name").setValue(name);
-        firebaseHelper.getUserRef(userId).child("phone").setValue(phone);
+        // Prepare updates map
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("name", name);
+        updates.put("phone", phone);
 
         // Only update image if changed or exists
         if (!encodedImage.isEmpty()) {
-            firebaseHelper.getUserRef(userId).child("profileImage").setValue(encodedImage);
+            updates.put("profileImage", encodedImage);
         }
 
-        // Add a small delay for better UX or wait for callbacks
-        new android.os.Handler().postDelayed(() -> {
-            progressBar.setVisibility(View.GONE);
-            Toast.makeText(EditProfileActivity.this, "Profile Updated!", Toast.LENGTH_SHORT).show();
-            finish();
-        }, 1000);
+        // Update all fields at once and WAIT for success
+        firebaseHelper.getUserRef(userId).updateChildren(updates)
+                .addOnSuccessListener(aVoid -> {
+                    progressBar.setVisibility(View.GONE);
+                    Toast.makeText(EditProfileActivity.this, "Profile Updated!", Toast.LENGTH_SHORT).show();
+                    finish();
+                })
+                .addOnFailureListener(e -> {
+                    progressBar.setVisibility(View.GONE);
+                    btnSave.setEnabled(true);
+                    Toast.makeText(EditProfileActivity.this, "Failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
     }
 }

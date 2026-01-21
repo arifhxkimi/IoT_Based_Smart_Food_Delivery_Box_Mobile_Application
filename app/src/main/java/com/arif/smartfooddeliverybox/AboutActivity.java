@@ -8,7 +8,7 @@ import androidx.appcompat.app.AppCompatDelegate; // Added for Light Mode
 
 import com.google.android.material.appbar.MaterialToolbar;
 
-public class AboutActivity extends AppCompatActivity {
+public class AboutActivity extends BaseInsetActivity {
 
     private MaterialToolbar toolbar;
     private TextView tvVersion, tvDescription;
@@ -20,6 +20,8 @@ public class AboutActivity extends AppCompatActivity {
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_about);
+
+        applyStatusBarInset();
 
         initViews();
         setupToolbar();

@@ -1,28 +1,40 @@
 package com.arif.smartfooddeliverybox;
 
 import android.os.Bundle;
+
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.app.AppCompatDelegate; // Import for Light Mode
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.view.WindowCompat;
 import androidx.fragment.app.Fragment;
+import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
 
 import com.arif.smartfooddeliverybox.fragments.DashboardFragment;
 import com.arif.smartfooddeliverybox.fragments.HistoryFragment;
 import com.arif.smartfooddeliverybox.fragments.ProfileFragment;
+import com.arif.smartfooddeliverybox.FoodReminderWorker;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // 1. Force Light Mode (Fixes the "weird" dark colors)
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
 
         super.onCreate(savedInstanceState);
+
+        // ✅ IMPORTANT: Enable edge-to-edge handling (we will apply insets in fragments)
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+
         setContentView(R.layout.activity_main);
+
+        scheduleFoodReminderWorker();
 
         BottomNavigationView bottomNav = findViewById(R.id.bottom_navigation);
 
-        // 2. Modern Navigation Listener
         bottomNav.setOnItemSelectedListener(item -> {
             Fragment selectedFragment = null;
 
@@ -43,11 +55,25 @@ public class MainActivity extends AppCompatActivity {
             return true;
         });
 
-        // Load default fragment (Dashboard) on startup
         if (savedInstanceState == null) {
             getSupportFragmentManager().beginTransaction()
                     .replace(R.id.fragment_container, new DashboardFragment())
                     .commit();
         }
+    }
+
+    private void scheduleFoodReminderWorker() {
+        PeriodicWorkRequest request =
+                new PeriodicWorkRequest.Builder(
+                        FoodReminderWorker.class,
+                        15, TimeUnit.MINUTES
+                ).build();
+
+        WorkManager.getInstance(this)
+                .enqueueUniquePeriodicWork(
+                        "food_reminder_worker",
+                        ExistingPeriodicWorkPolicy.KEEP,
+                        request
+                );
     }
 }

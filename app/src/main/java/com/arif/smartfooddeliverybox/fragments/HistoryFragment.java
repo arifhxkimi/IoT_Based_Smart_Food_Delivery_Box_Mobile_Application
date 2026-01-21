@@ -11,7 +11,6 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
@@ -33,12 +32,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 
-public class HistoryFragment extends Fragment {
+public class HistoryFragment extends BaseInsetFragment {
 
     private RecyclerView recyclerView;
     private SwipeRefreshLayout swipeRefresh;
     private LinearLayout layoutEmpty;
-    private TextView tvEmptyMessage; // NEW: For dynamic empty messages
+    private TextView tvEmptyMessage;
     private ChipGroup chipGroupFilter;
 
     private ImageButton btnCalendar, btnResetDate;
@@ -47,12 +46,12 @@ public class HistoryFragment extends Fragment {
     private FirebaseHelper firebaseHelper;
     private ValueEventListener historyListener;
 
-    private List<HistoryItem> allHistory = new ArrayList<>();
-    private List<HistoryListItem> displayList = new ArrayList<>();
+    private final List<HistoryItem> allHistory = new ArrayList<>();
+    private final List<HistoryListItem> displayList = new ArrayList<>();
     private HistoryAdapter adapter;
 
     private Long selectedDate = null;
-    private String currentActionFilter = "all"; // NEW: Track current filter
+    private String currentActionFilter = "all";
 
     @Nullable
     @Override
@@ -61,12 +60,15 @@ public class HistoryFragment extends Fragment {
 
         View view = inflater.inflate(R.layout.fragment_history, container, false);
 
+        // ✅ Fix status bar overlap for this fragment
+        applyStatusBarInset(view);
+
         firebaseHelper = FirebaseHelper.getInstance();
 
         recyclerView = view.findViewById(R.id.recyclerViewDeliveries);
         swipeRefresh = view.findViewById(R.id.swipeRefresh);
         layoutEmpty = view.findViewById(R.id.layoutEmpty);
-        tvEmptyMessage = view.findViewById(R.id.tvEmptyMessage); // NEW
+        tvEmptyMessage = view.findViewById(R.id.tvEmptyMessage);
         chipGroupFilter = view.findViewById(R.id.chipGroupFilter);
         btnCalendar = view.findViewById(R.id.btnCalendar);
         btnResetDate = view.findViewById(R.id.btnResetDate);
@@ -77,12 +79,10 @@ public class HistoryFragment extends Fragment {
         recyclerView.setAdapter(adapter);
 
         swipeRefresh.setOnRefreshListener(this::loadHistory);
-
         chipGroupFilter.setOnCheckedChangeListener((group, checkedId) -> applyFilters());
 
         btnCalendar.setOnClickListener(v -> showDatePicker());
         btnResetDate.setOnClickListener(v -> clearDateFilter());
-
 
         loadHistory();
         return view;
@@ -139,23 +139,20 @@ public class HistoryFragment extends Fragment {
                 .addValueEventListener(historyListener);
     }
 
-    // ---------------- FILTERING (FIXED) ----------------
+    // ---------------- FILTERING ----------------
 
     private void applyFilters() {
         displayList.clear();
 
-        // FIXED: Determine action filter
         currentActionFilter = "all";
         int id = chipGroupFilter.getCheckedChipId();
 
         if (id == R.id.chipUnlocks) {
-            currentActionFilter = "unlocked";
-        } else if (id == R.id.chipFoodStored) { // FIXED: Added missing Food Stored filter
+            currentActionFilter = "unlocks";
+        } else if (id == R.id.chipFoodStored || id == R.id.chipDeliveries) {
             currentActionFilter = "food_stored";
-        } else if (id == R.id.chipDeliveries) {
-            currentActionFilter = "food_stored"; // "Deliveries" means food was stored
         } else if (id == R.id.chipRetrievals) {
-            currentActionFilter = "retrieved";
+            currentActionFilter = "retrievals";
         }
 
         SimpleDateFormat dateHeaderFormat = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault());
@@ -163,19 +160,11 @@ public class HistoryFragment extends Fragment {
 
         for (HistoryItem item : allHistory) {
 
-            // FIXED: Apply action filter correctly
-            if (!"all".equals(currentActionFilter) && !item.action.equals(currentActionFilter)) {
-                continue;
-            }
+            if (!passesActionFilter(item.action, currentActionFilter)) continue;
 
-            // FIXED: Apply date filter with proper timezone handling
-            if (selectedDate != null && !isSameDay(item.timestamp, selectedDate)) {
-                continue;
-            }
+            if (selectedDate != null && !isSameDay(item.timestamp, selectedDate)) continue;
 
-            // Group by date header
             String date = dateHeaderFormat.format(new Date(item.timestamp));
-
             if (!date.equals(lastDate)) {
                 displayList.add(new HistoryListItem(date));
                 lastDate = date;
@@ -189,10 +178,28 @@ public class HistoryFragment extends Fragment {
         updateHeaderCount();
     }
 
-    // ---------------- DATE PICKER (FIXED) ----------------
+    private boolean passesActionFilter(String action, String filter) {
+        if ("all".equals(filter)) return true;
+
+        if ("unlocks".equals(filter)) {
+            return action.equals("unlocked")
+                    || action.equals("unlocked_for_delivery")
+                    || action.equals("unlocked_for_retrieval");
+        }
+
+        if ("retrievals".equals(filter)) {
+            return action.equals("retrieved")
+                    || action.equals("delivery_collected")
+                    || action.equals("collected")
+                    || action.equals("unlocked_for_retrieval");
+        }
+
+        return action.equals(filter);
+    }
+
+    // ---------------- DATE PICKER ----------------
 
     private void showDatePicker() {
-        // Build date picker starting from today
         long today = MaterialDatePicker.todayInUtcMilliseconds();
 
         MaterialDatePicker<Long> picker = MaterialDatePicker.Builder.datePicker()
@@ -203,12 +210,11 @@ public class HistoryFragment extends Fragment {
         picker.addOnPositiveButtonClickListener(selection -> {
             selectedDate = selection;
 
-            // FIXED: Display selected date consistently
             SimpleDateFormat sdf = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault());
             sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
 
             String dateStr = sdf.format(new Date(selection));
-            tvDateFilter.setText("📅 " + dateStr); // FIXED: Added emoji for clarity
+            tvDateFilter.setText("📅 " + dateStr);
             btnResetDate.setVisibility(View.VISIBLE);
 
             applyFilters();
@@ -224,40 +230,35 @@ public class HistoryFragment extends Fragment {
         applyFilters();
     }
 
-    // FIXED: Proper date comparison (was causing 05 Jan showing 20 Dec bug)
-    // CORRECTED: Fixed timezone comparison
+    // ---------------- DAY COMPARISON ----------------
+
     private boolean isSameDay(long timestamp, long selectedDateUTC) {
-        // Step 1: Convert Firebase timestamp to local calendar
         Calendar itemCal = Calendar.getInstance();
         itemCal.setTimeInMillis(timestamp);
 
-        // Step 2: Convert UTC selected date to local calendar
         Calendar selectedCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
         selectedCal.setTimeInMillis(selectedDateUTC);
 
-        // Step 3: Extract date components from UTC calendar
         int selectedYear = selectedCal.get(Calendar.YEAR);
         int selectedMonth = selectedCal.get(Calendar.MONTH);
         int selectedDay = selectedCal.get(Calendar.DAY_OF_MONTH);
 
-        // Step 4: Create local calendar with selected date
         Calendar localSelectedDate = Calendar.getInstance();
         localSelectedDate.clear();
         localSelectedDate.set(selectedYear, selectedMonth, selectedDay);
 
-        // Step 5: Compare year, month, and day
         return itemCal.get(Calendar.YEAR) == localSelectedDate.get(Calendar.YEAR) &&
                 itemCal.get(Calendar.MONTH) == localSelectedDate.get(Calendar.MONTH) &&
                 itemCal.get(Calendar.DAY_OF_MONTH) == localSelectedDate.get(Calendar.DAY_OF_MONTH);
     }
 
-    // FIXED: Dynamic empty state messages
+    // ---------------- EMPTY STATE ----------------
+
     private void updateEmptyState() {
         if (displayList.isEmpty()) {
             layoutEmpty.setVisibility(View.VISIBLE);
             recyclerView.setVisibility(View.GONE);
 
-            // FIXED: Show contextual empty message
             String message;
             if (selectedDate != null && !"all".equals(currentActionFilter)) {
                 message = "No activities found for selected date and filter";
@@ -269,9 +270,7 @@ public class HistoryFragment extends Fragment {
                 message = "No activity yet\n\nYour delivery history will appear here";
             }
 
-            if (tvEmptyMessage != null) {
-                tvEmptyMessage.setText(message);
-            }
+            if (tvEmptyMessage != null) tvEmptyMessage.setText(message);
 
         } else {
             layoutEmpty.setVisibility(View.GONE);
@@ -285,11 +284,8 @@ public class HistoryFragment extends Fragment {
         int totalItems = allHistory.size();
         int visibleItems = 0;
 
-        // Count non-header items in display list
         for (HistoryListItem item : displayList) {
-            if (item.type == HistoryListItem.TYPE_EVENT) {
-                visibleItems++;
-            }
+            if (item.type == HistoryListItem.TYPE_EVENT) visibleItems++;
         }
 
         String headerText;
@@ -299,19 +295,13 @@ public class HistoryFragment extends Fragment {
             sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
             String dateStr = sdf.format(new Date(selectedDate));
 
-            if (visibleItems == 0) {
-                headerText = "📅 " + dateStr + " - No activities";
-            } else {
-                headerText = "📅 " + dateStr + " - " + visibleItems + " activities";
-            }
+            headerText = (visibleItems == 0)
+                    ? "📅 " + dateStr + " - No activities"
+                    : "📅 " + dateStr + " - " + visibleItems + " activities";
         } else {
-            if (totalItems == 0) {
-                headerText = "No activities yet";
-            } else if (!"all".equals(currentActionFilter)) {
-                headerText = visibleItems + " of " + totalItems + " activities";
-            } else {
-                headerText = totalItems + " total activities";
-            }
+            if (totalItems == 0) headerText = "No activities yet";
+            else if (!"all".equals(currentActionFilter)) headerText = visibleItems + " of " + totalItems + " activities";
+            else headerText = totalItems + " total activities";
         }
 
         tvDateFilter.setText(headerText);
@@ -360,7 +350,7 @@ public class HistoryFragment extends Fragment {
         }
     }
 
-    // ---------------- ADAPTER (IMPROVED) ----------------
+    // ---------------- ADAPTER ----------------
 
     private class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
@@ -396,35 +386,38 @@ public class HistoryFragment extends Fragment {
 
             if (holder instanceof DateVH) {
                 ((DateVH) holder).tvDate.setText(item.date);
-            } else {
-                EventVH vh = (EventVH) holder;
-                HistoryItem hi = item.item;
+                return;
+            }
 
-                vh.tvBox.setText("Box " + hi.box);
-                vh.tvTime.setText(timeFormat.format(new Date(hi.timestamp)));
+            EventVH vh = (EventVH) holder;
+            HistoryItem hi = item.item;
 
-                // IMPROVED: Better color scheme and consistency
-                switch (hi.action) {
-                    case "unlocked":
-                        vh.tvAction.setText("🔓 Unlocked for Delivery");
-                        // Keep action text dark, only color the emoji/icon
-                        vh.tvAction.setTextColor(0xFF212121); // Dark text
-                        break;
+            vh.tvBox.setText("Box " + hi.box);
+            vh.tvTime.setText(timeFormat.format(new Date(hi.timestamp)));
 
-                    case "food_stored":
-                        vh.tvAction.setText("🍕 Food Stored");
-                        vh.tvAction.setTextColor(0xFF212121);
-                        break;
+            vh.tvAction.setText(formatActionLabel(hi.action));
+            vh.tvAction.setTextColor(0xFF212121);
+        }
 
-                    case "retrieved":
-                        vh.tvAction.setText("✅ Delivery Collected");
-                        vh.tvAction.setTextColor(0xFF212121);
-                        break;
+        private String formatActionLabel(String action) {
+            switch (action) {
+                case "unlocked":
+                case "unlocked_for_delivery":
+                    return "🔓 Unlocked for Delivery";
 
-                    default:
-                        vh.tvAction.setText(hi.action);
-                        vh.tvAction.setTextColor(0xFF757575);
-                }
+                case "unlocked_for_retrieval":
+                    return "📦 Unlocked for Retrieval";
+
+                case "food_stored":
+                    return "🍕 Food Stored";
+
+                case "retrieved":
+                case "delivery_collected":
+                case "collected":
+                    return "✅ Delivery Collected";
+
+                default:
+                    return action.replace("_", " ");
             }
         }
 
@@ -435,7 +428,6 @@ public class HistoryFragment extends Fragment {
 
         class DateVH extends RecyclerView.ViewHolder {
             TextView tvDate;
-
             DateVH(View v) {
                 super(v);
                 tvDate = v.findViewById(R.id.tvDateHeader);
@@ -444,7 +436,6 @@ public class HistoryFragment extends Fragment {
 
         class EventVH extends RecyclerView.ViewHolder {
             TextView tvAction, tvBox, tvTime;
-
             EventVH(View v) {
                 super(v);
                 tvAction = v.findViewById(R.id.tvAction);

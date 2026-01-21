@@ -16,7 +16,6 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
-import androidx.fragment.app.Fragment;
 
 import com.arif.smartfooddeliverybox.AboutActivity;
 import com.arif.smartfooddeliverybox.ChangePasswordActivity;
@@ -30,7 +29,7 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.ValueEventListener;
 
-public class ProfileFragment extends Fragment {
+public class ProfileFragment extends BaseInsetFragment {
 
     private ImageView ivProfile;
     private TextView tvUserName, tvUserEmail, tvUserPhone;
@@ -47,6 +46,9 @@ public class ProfileFragment extends Fragment {
                              @Nullable Bundle savedInstanceState) {
 
         View view = inflater.inflate(R.layout.fragment_profile, container, false);
+
+        // ✅ Fix status bar overlap for this fragment
+        applyStatusBarInset(view);
 
         initViews(view);
         setupListeners();
@@ -70,29 +72,23 @@ public class ProfileFragment extends Fragment {
 
         firebaseHelper = FirebaseHelper.getInstance();
 
-        // Hide until loaded
         tvUserName.setVisibility(View.INVISIBLE);
         tvUserEmail.setVisibility(View.INVISIBLE);
         tvUserPhone.setVisibility(View.INVISIBLE);
     }
 
     private void setupListeners() {
-
         btnEditProfile.setOnClickListener(v ->
-                startActivity(new Intent(getActivity(), EditProfileActivity.class))
-        );
+                startActivity(new Intent(getActivity(), EditProfileActivity.class)));
 
         btnChangePassword.setOnClickListener(v ->
-                startActivity(new Intent(getActivity(), ChangePasswordActivity.class))
-        );
+                startActivity(new Intent(getActivity(), ChangePasswordActivity.class)));
 
         btnNotifications.setOnClickListener(v ->
-                startActivity(new Intent(getActivity(), NotificationsActivity.class))
-        );
+                startActivity(new Intent(getActivity(), NotificationsActivity.class)));
 
         btnAbout.setOnClickListener(v ->
-                startActivity(new Intent(getActivity(), AboutActivity.class))
-        );
+                startActivity(new Intent(getActivity(), AboutActivity.class)));
 
         btnLogout.setOnClickListener(v -> showLogoutDialog());
     }
@@ -147,18 +143,15 @@ public class ProfileFragment extends Fragment {
         tvUserEmail.setVisibility(View.VISIBLE);
         tvUserPhone.setVisibility(View.VISIBLE);
 
-        // 🔥 PROFILE IMAGE FIX
         if (user.getProfileImage() != null && !user.getProfileImage().isEmpty()) {
             try {
                 byte[] bytes = Base64.decode(user.getProfileImage(), Base64.DEFAULT);
                 Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
                 ivProfile.setImageBitmap(bitmap);
             } catch (Exception e) {
-                // Use generic user icon if decode fails
                 ivProfile.setImageResource(R.drawable.ic_user);
             }
         } else {
-            // Use generic user icon if no image
             ivProfile.setImageResource(R.drawable.ic_user);
         }
     }
@@ -196,7 +189,6 @@ public class ProfileFragment extends Fragment {
     }
 
     private void logout() {
-        // SAFETY CHECK: Ensure Activity exists before using it
         if (getActivity() == null) return;
 
         firebaseHelper.getAuth().signOut();
@@ -210,6 +202,6 @@ public class ProfileFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        loadUserProfile(); // refresh after edit
+        loadUserProfile();
     }
 }

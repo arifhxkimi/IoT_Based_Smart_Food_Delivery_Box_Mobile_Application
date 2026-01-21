@@ -4,14 +4,14 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F5F5">
+    android:background="@color/background">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <!-- Header with User Info -->
+        <!-- ================= HEADER ================= -->
         <LinearLayout
             android:id="@+id/profileContent"
             android:layout_width="match_parent"
@@ -23,7 +23,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:background="@drawable/bg_gradient_blue"
+                android:background="@drawable/bg_gradient_purple"
                 android:padding="24dp"
                 android:gravity="center"
                 android:elevation="4dp">
@@ -35,18 +35,17 @@
                     android:layout_height="80dp"
                     android:src="@drawable/ic_user"
                     android:background="@drawable/circle_background"
-                    android:backgroundTint="#FFFFFF"
+                    android:backgroundTint="@color/white"
                     android:padding="20dp"
                     android:scaleType="centerCrop"
-                    app:tint="#2196F3"/>
-
+                    app:tint="@color/primary"/>
 
                 <TextView
                     android:id="@+id/tvUserName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="User Name"
-                    android:textColor="@android:color/white"
+                    android:textColor="@color/white"
                     android:textSize="22sp"
                     android:textStyle="bold"
                     android:layout_marginTop="16dp"/>
@@ -56,7 +55,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="user@email.com"
-                    android:textColor="#E0E0E0"
+                    android:textColor="@color/primary_soft_text"
                     android:textSize="14sp"
                     android:layout_marginTop="4dp"/>
 
@@ -65,20 +64,20 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="+60123456789"
-                    android:textColor="#E0E0E0"
+                    android:textColor="@color/primary_soft_text"
                     android:textSize="14sp"
                     android:layout_marginTop="2dp"/>
 
             </LinearLayout>
 
-            <!-- Menu Options -->
+            <!-- ================= MENU ================= -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <!-- Account Section -->
+                <!-- ACCOUNT -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -114,7 +113,7 @@
                                 android:layout_width="24dp"
                                 android:layout_height="24dp"
                                 android:src="@drawable/ic_edit"
-                                app:tint="#2196F3"/>
+                                app:tint="@color/primary"/>
 
                             <TextView
                                 android:layout_width="0dp"
@@ -122,7 +121,7 @@
                                 android:layout_weight="1"
                                 android:text="Edit Profile"
                                 android:textSize="16sp"
-                                android:textColor="#212121"
+                                android:textColor="@color/text_primary"
                                 android:layout_marginStart="16dp"/>
 
                             <ImageView
@@ -153,7 +152,7 @@
                                 android:layout_width="24dp"
                                 android:layout_height="24dp"
                                 android:src="@drawable/ic_lock"
-                                app:tint="#2196F3"/>
+                                app:tint="@color/primary"/>
 
                             <TextView
                                 android:layout_width="0dp"
@@ -161,7 +160,7 @@
                                 android:layout_weight="1"
                                 android:text="Change Password"
                                 android:textSize="16sp"
-                                android:textColor="#212121"
+                                android:textColor="@color/text_primary"
                                 android:layout_marginStart="16dp"/>
 
                             <ImageView
@@ -176,7 +175,7 @@
 
                 </androidx.cardview.widget.CardView>
 
-                <!-- Settings Section -->
+                <!-- SETTINGS -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -212,7 +211,7 @@
                                 android:layout_width="24dp"
                                 android:layout_height="24dp"
                                 android:src="@drawable/ic_bell"
-                                app:tint="#2196F3"/>
+                                app:tint="@color/primary"/>
 
                             <TextView
                                 android:layout_width="0dp"
@@ -220,7 +219,7 @@
                                 android:layout_weight="1"
                                 android:text="Notifications"
                                 android:textSize="16sp"
-                                android:textColor="#212121"
+                                android:textColor="@color/text_primary"
                                 android:layout_marginStart="16dp"/>
 
                             <ImageView
@@ -251,7 +250,7 @@
                                 android:layout_width="24dp"
                                 android:layout_height="24dp"
                                 android:src="@drawable/ic_info"
-                                app:tint="#2196F3"/>
+                                app:tint="@color/primary"/>
 
                             <TextView
                                 android:layout_width="0dp"
@@ -259,7 +258,7 @@
                                 android:layout_weight="1"
                                 android:text="About"
                                 android:textSize="16sp"
-                                android:textColor="#212121"
+                                android:textColor="@color/text_primary"
                                 android:layout_marginStart="16dp"/>
 
                             <ImageView
@@ -274,7 +273,7 @@
 
                 </androidx.cardview.widget.CardView>
 
-                <!-- Logout Button -->
+                <!-- LOGOUT -->
                 <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -296,7 +295,7 @@
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:src="@drawable/ic_logout"
-                            app:tint="#F44336"/>
+                            app:tint="@color/status_locked"/>
 
                         <TextView
                             android:layout_width="0dp"
@@ -305,7 +304,7 @@
                             android:text="Logout"
                             android:textSize="16sp"
                             android:textStyle="bold"
-                            android:textColor="#F44336"
+                            android:textColor="@color/status_locked"
                             android:layout_marginStart="16dp"/>
 
                     </LinearLayout>
@@ -316,7 +315,7 @@
 
         </LinearLayout>
 
-        <!-- Error Message (Hidden by default) -->
+        <!-- ERROR -->
         <TextView
             android:id="@+id/tvErrorMessage"
             android:layout_width="match_parent"
@@ -326,16 +325,16 @@
             android:textColor="@color/status_locked"
             android:gravity="center"
             android:padding="32dp"
-            android:visibility="gone" />
+            android:visibility="gone"/>
 
-        <!-- Progress Bar -->
+        <!-- LOADING -->
         <ProgressBar
             android:id="@+id/progressBar"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:layout_marginTop="32dp"
-            android:visibility="gone" />
+            android:visibility="gone"/>
 
     </LinearLayout>
 

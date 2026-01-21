@@ -12,7 +12,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@drawable/bg_gradient_blue"
+        android:background="@drawable/bg_gradient_purple"
         android:padding="24dp"
         android:elevation="4dp">
 
@@ -42,7 +42,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Showing all history"
-                    android:textColor="#E0E0E0"
+                    android:textColor="#F1E8FF"
                     android:textSize="14sp"/>
             </LinearLayout>
 
@@ -57,7 +57,7 @@
                 app:tint="@android:color/white"
                 android:contentDescription="Pick Date"/>
 
-            <!-- Reset Button (Hidden by default) -->
+            <!-- Reset Button -->
             <ImageButton
                 android:id="@+id/btnResetDate"
                 android:layout_width="48dp"
@@ -69,12 +69,11 @@
                 android:visibility="gone"
                 android:contentDescription="Reset Filter"/>
 
-
         </LinearLayout>
 
     </LinearLayout>
 
-    <!-- Filter Chips (FIXED: Added Food Stored chip + emojis) -->
+    <!-- Filter Chips -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -107,7 +106,6 @@
                 android:text="🔓 Unlocks"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
-            <!-- FIXED: Added missing Food Stored chip -->
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipFoodStored"
                 android:layout_width="wrap_content"
@@ -115,8 +113,6 @@
                 android:text="📥 Food Stored"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
-            <!-- Note: "Deliveries" can be removed if redundant with "Food Stored" -->
-            <!-- Or keep it as an alias that filters to food_stored -->
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipDeliveries"
                 android:layout_width="wrap_content"
@@ -153,7 +149,7 @@
                 android:padding="16dp"
                 android:clipToPadding="false"/>
 
-            <!-- FIXED: Empty State with dynamic message -->
+            <!-- Empty State -->
             <LinearLayout
                 android:id="@+id/layoutEmpty"
                 android:layout_width="wrap_content"
@@ -180,7 +176,6 @@
                     android:textColor="#757575"
                     android:layout_marginTop="16dp"/>
 
-                <!-- FIXED: Dynamic message TextView -->
                 <TextView
                     android:id="@+id/tvEmptyMessage"
                     android:layout_width="wrap_content"

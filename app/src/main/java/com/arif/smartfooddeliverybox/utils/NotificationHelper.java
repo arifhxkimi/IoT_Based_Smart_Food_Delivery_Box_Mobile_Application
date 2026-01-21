@@ -104,4 +104,14 @@ public class NotificationHelper {
                 "Box " + boxNumber + " is currently offline. Please check the connection."
         );
     }
+
+    public void notifyPickupReminder(String boxNumber, String minutes) {
+        showDeliveryNotification(
+                boxNumber,
+                "⏰ Food Pickup Reminder",
+                "Your food has been in Box " + boxNumber + " for " + minutes +
+                        " minutes. Please collect it to avoid spoilage."
+        );
+    }
+
 }

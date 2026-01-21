@@ -9,7 +9,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
-public class NotificationsActivity extends AppCompatActivity {
+public class NotificationsActivity extends BaseInsetActivity  {
 
     private MaterialToolbar toolbar;
     private SwitchMaterial switchDeliveryNotif, switchRetrievalNotif, switchSystemNotif;
@@ -24,6 +24,8 @@ public class NotificationsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_notifications);
+
+        applyStatusBarInset();
 
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
 

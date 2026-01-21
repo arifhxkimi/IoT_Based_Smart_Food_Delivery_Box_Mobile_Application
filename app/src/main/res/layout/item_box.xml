@@ -71,18 +71,6 @@
                 android:textColor="#9E9E9E"
                 android:layout_marginTop="2dp"/>
 
-            <!-- Optional: Online Badge (Small) -->
-            <TextView
-                android:id="@+id/tvPhysical"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="• ONLINE"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:textColor="#4CAF50"
-                android:visibility="gone"
-                android:layout_marginTop="2dp"/>
-
         </LinearLayout>
 
         <!-- 3. Status Pill (Right) -->
