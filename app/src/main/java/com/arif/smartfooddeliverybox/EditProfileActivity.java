@@ -15,7 +15,8 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
 
 import com.arif.smartfooddeliverybox.models.User;
 import com.arif.smartfooddeliverybox.utils.FirebaseHelper;
@@ -36,12 +37,14 @@ public class EditProfileActivity extends BaseInsetActivity {
     private MaterialToolbar toolbar;
     private ImageView ivProfile, btnChangePhoto;
     private TextInputEditText etName, etEmail, etPhone;
-    private MaterialButton btnSave, btnCancel;
+    private MaterialButton btnSave, btnCancel, btnRemovePhoto;
     private ProgressBar progressBar;
 
     private FirebaseHelper firebaseHelper;
     private String userId;
-    private String encodedImage = ""; // Stores the Base64 image string
+
+    private boolean removePhoto = false;
+    private String encodedImage = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,14 +72,17 @@ public class EditProfileActivity extends BaseInsetActivity {
         toolbar = findViewById(R.id.toolbar);
         ivProfile = findViewById(R.id.ivProfile);
         btnChangePhoto = findViewById(R.id.btnChangePhoto);
+        btnRemovePhoto = findViewById(R.id.btnRemovePhoto);
+
         etName = findViewById(R.id.etName);
         etEmail = findViewById(R.id.etEmail);
         etPhone = findViewById(R.id.etPhone);
+
         btnSave = findViewById(R.id.btnSave);
         btnCancel = findViewById(R.id.btnCancel);
+
         progressBar = findViewById(R.id.progressBar);
 
-        // Email is usually fixed in Firebase Auth
         etEmail.setEnabled(false);
     }
 
@@ -90,35 +96,37 @@ public class EditProfileActivity extends BaseInsetActivity {
     }
 
     private void setupListeners() {
-        // 1. Click camera icon to pick image
-        btnChangePhoto.setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-            pickImageLauncher.launch(intent);
-        });
+        btnChangePhoto.setOnClickListener(v -> openGalleryPicker());
+        ivProfile.setOnClickListener(v -> openGalleryPicker());
 
-        // 2. Click image itself to pick image
-        ivProfile.setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-            pickImageLauncher.launch(intent);
-        });
+        btnRemovePhoto.setOnClickListener(v -> confirmRemovePhoto());
 
         btnSave.setOnClickListener(v -> saveProfile());
         btnCancel.setOnClickListener(v -> finish());
     }
 
-    // --- IMAGE HANDLING START ---
+    private void openGalleryPicker() {
+        Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        pickImageLauncher.launch(intent);
+    }
 
     private final ActivityResultLauncher<Intent> pickImageLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
             result -> {
                 if (result.getResultCode() == RESULT_OK && result.getData() != null) {
                     Uri imageUri = result.getData().getData();
+                    if (imageUri == null) return;
+
                     try {
                         Bitmap bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), imageUri);
-                        ivProfile.setImageBitmap(bitmap); // Show selected image immediately
-                        encodedImage = encodeImage(bitmap); // Convert to String for Firebase
+
+                        removePhoto = false;
+                        showBitmapAvatar(bitmap);
+                        encodedImage = encodeImage(bitmap);
+
+                        btnRemovePhoto.setVisibility(View.VISIBLE);
+
                     } catch (IOException e) {
-                        e.printStackTrace();
                         Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show();
                     }
                 }
@@ -126,19 +134,14 @@ public class EditProfileActivity extends BaseInsetActivity {
     );
 
     private String encodeImage(Bitmap bitmap) {
-        // Resize image to ensure it uploads quickly and fits in DB
-        int previewWidth = 400;
-        int previewHeight = bitmap.getHeight() * previewWidth / bitmap.getWidth();
-        Bitmap previewBitmap = Bitmap.createScaledBitmap(bitmap, previewWidth, previewHeight, false);
+        int previewWidth = 500;
+        int previewHeight = bitmap.getHeight() * previewWidth / Math.max(1, bitmap.getWidth());
+        Bitmap previewBitmap = Bitmap.createScaledBitmap(bitmap, previewWidth, previewHeight, true);
 
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        // Compress quality 70 is a good balance
-        previewBitmap.compress(Bitmap.CompressFormat.JPEG, 70, byteArrayOutputStream);
-        byte[] bytes = byteArrayOutputStream.toByteArray();
-        return Base64.encodeToString(bytes, Base64.DEFAULT);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        previewBitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos);
+        return Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT);
     }
-
-    // --- IMAGE HANDLING END ---
 
     private void loadUserProfile() {
         progressBar.setVisibility(View.VISIBLE);
@@ -150,26 +153,42 @@ public class EditProfileActivity extends BaseInsetActivity {
                 progressBar.setVisibility(View.GONE);
                 btnSave.setEnabled(true);
 
-                if (snapshot.exists()) {
-                    User user = snapshot.getValue(User.class);
-                    if (user != null) {
-                        etName.setText(user.getName());
-                        etEmail.setText(user.getEmail());
-                        etPhone.setText(user.getPhone());
-
-                        // Load Profile Image
-                        if (user.getProfileImage() != null && !user.getProfileImage().isEmpty()) {
-                            try {
-                                byte[] bytes = Base64.decode(user.getProfileImage(), Base64.DEFAULT);
-                                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-                                ivProfile.setImageBitmap(bitmap);
-                                encodedImage = user.getProfileImage(); // Keep existing image logic
-                            } catch (Exception e) {
-                                // Invalid image data, ignore
-                            }
-                        }
-                    }
+                if (!snapshot.exists()) {
+                    showDefaultAvatar();
+                    btnRemovePhoto.setVisibility(View.GONE);
+                    return;
                 }
+
+                User user = snapshot.getValue(User.class);
+                if (user == null) {
+                    showDefaultAvatar();
+                    btnRemovePhoto.setVisibility(View.GONE);
+                    return;
+                }
+
+                etName.setText(user.getName());
+                etEmail.setText(user.getEmail());
+                etPhone.setText(user.getPhone());
+
+                String img = user.getProfileImage();
+                boolean hasPhoto = img != null && !img.trim().isEmpty();
+
+                if (hasPhoto) {
+                    try {
+                        byte[] bytes = Base64.decode(img, Base64.DEFAULT);
+                        Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+
+                        if (bitmap != null) {
+                            showBitmapAvatar(bitmap);
+                            encodedImage = img;
+                            btnRemovePhoto.setVisibility(View.VISIBLE);
+                            return;
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                showDefaultAvatar();
+                btnRemovePhoto.setVisibility(View.GONE);
             }
 
             @Override
@@ -181,9 +200,49 @@ public class EditProfileActivity extends BaseInsetActivity {
         });
     }
 
+    private void showBitmapAvatar(Bitmap bitmap) {
+        ivProfile.setPadding(0, 0, 0, 0);
+        ivProfile.clearColorFilter();
+        ivProfile.setImageTintList(null);
+        ivProfile.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        ivProfile.setImageBitmap(bitmap);
+    }
+
+    private void showDefaultAvatar() {
+        ivProfile.setImageResource(R.drawable.ic_user);
+
+        // ✅ Important
+        ivProfile.setScaleType(ImageView.ScaleType.FIT_CENTER);
+
+        int pad = dpToPx(18);   // try 14–22
+        ivProfile.setPadding(pad, pad, pad, pad);
+
+        ivProfile.setColorFilter(ContextCompat.getColor(this, R.color.primary));
+    }
+
+
+    private int dpToPx(int dp) {
+        return (int) (dp * getResources().getDisplayMetrics().density);
+    }
+
+    private void confirmRemovePhoto() {
+        new AlertDialog.Builder(this)
+                .setTitle("Remove Profile Photo")
+                .setMessage("Remove your profile photo?")
+                .setPositiveButton("Remove", (d, w) -> {
+                    removePhoto = true;
+                    encodedImage = "";
+                    showDefaultAvatar();
+                    btnRemovePhoto.setVisibility(View.GONE);
+                    Toast.makeText(this, "Photo removed (tap Save to apply)", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void saveProfile() {
-        String name = etName.getText().toString().trim();
-        String phone = etPhone.getText().toString().trim();
+        String name = etName.getText() != null ? etName.getText().toString().trim() : "";
+        String phone = etPhone.getText() != null ? etPhone.getText().toString().trim() : "";
 
         if (name.isEmpty()) {
             etName.setError("Name required");
@@ -197,17 +256,16 @@ public class EditProfileActivity extends BaseInsetActivity {
         progressBar.setVisibility(View.VISIBLE);
         btnSave.setEnabled(false);
 
-        // Prepare updates map
         Map<String, Object> updates = new HashMap<>();
         updates.put("name", name);
         updates.put("phone", phone);
 
-        // Only update image if changed or exists
-        if (!encodedImage.isEmpty()) {
+        if (removePhoto) {
+            updates.put("profileImage", null);
+        } else if (encodedImage != null && !encodedImage.isEmpty()) {
             updates.put("profileImage", encodedImage);
         }
 
-        // Update all fields at once and WAIT for success
         firebaseHelper.getUserRef(userId).updateChildren(updates)
                 .addOnSuccessListener(aVoid -> {
                     progressBar.setVisibility(View.GONE);

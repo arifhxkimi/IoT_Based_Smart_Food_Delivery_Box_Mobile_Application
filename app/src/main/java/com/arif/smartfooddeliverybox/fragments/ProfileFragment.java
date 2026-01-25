@@ -16,6 +16,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
 
 import com.arif.smartfooddeliverybox.AboutActivity;
 import com.arif.smartfooddeliverybox.ChangePasswordActivity;
@@ -47,7 +48,6 @@ public class ProfileFragment extends BaseInsetFragment {
 
         View view = inflater.inflate(R.layout.fragment_profile, container, false);
 
-        // ✅ Fix status bar overlap for this fragment
         applyStatusBarInset(view);
 
         initViews(view);
@@ -75,6 +75,9 @@ public class ProfileFragment extends BaseInsetFragment {
         tvUserName.setVisibility(View.INVISIBLE);
         tvUserEmail.setVisibility(View.INVISIBLE);
         tvUserPhone.setVisibility(View.INVISIBLE);
+
+        ivProfile.setImageTintList(null);
+        ivProfile.clearColorFilter();
     }
 
     private void setupListeners() {
@@ -107,15 +110,14 @@ public class ProfileFragment extends BaseInsetFragment {
 
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (!isAdded() || getContext() == null) return;
+
                         progressBar.setVisibility(View.GONE);
 
                         if (snapshot.exists()) {
                             User user = snapshot.getValue(User.class);
-                            if (user != null) {
-                                updateUI(user);
-                            } else {
-                                createDefaultProfile();
-                            }
+                            if (user != null) updateUI(user);
+                            else createDefaultProfile();
                         } else {
                             createDefaultProfile();
                         }
@@ -123,18 +125,16 @@ public class ProfileFragment extends BaseInsetFragment {
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
+                        if (!isAdded() || getContext() == null) return;
                         progressBar.setVisibility(View.GONE);
                         if (getContext() != null) {
-                            Toast.makeText(getContext(),
-                                    "Failed to load profile",
-                                    Toast.LENGTH_SHORT).show();
+                            Toast.makeText(getContext(), "Failed to load profile", Toast.LENGTH_SHORT).show();
                         }
                     }
                 });
     }
 
     private void updateUI(User user) {
-
         tvUserName.setText(user.getName() != null ? user.getName() : "User");
         tvUserEmail.setText(user.getEmail() != null ? user.getEmail() : "");
         tvUserPhone.setText(user.getPhone() != null ? user.getPhone() : "");
@@ -143,17 +143,48 @@ public class ProfileFragment extends BaseInsetFragment {
         tvUserEmail.setVisibility(View.VISIBLE);
         tvUserPhone.setVisibility(View.VISIBLE);
 
-        if (user.getProfileImage() != null && !user.getProfileImage().isEmpty()) {
+        String img = user.getProfileImage();
+        boolean hasPhoto = img != null && !img.trim().isEmpty();
+
+        if (hasPhoto) {
             try {
-                byte[] bytes = Base64.decode(user.getProfileImage(), Base64.DEFAULT);
+                byte[] bytes = Base64.decode(img, Base64.DEFAULT);
                 Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-                ivProfile.setImageBitmap(bitmap);
-            } catch (Exception e) {
-                ivProfile.setImageResource(R.drawable.ic_user);
-            }
-        } else {
-            ivProfile.setImageResource(R.drawable.ic_user);
+
+                if (bitmap != null) {
+                    showBitmapAvatar(bitmap);
+                    return;
+                }
+            } catch (Exception ignored) {}
         }
+
+        showDefaultAvatar();
+    }
+
+    private void showBitmapAvatar(Bitmap bitmap) {
+        ivProfile.setPadding(0, 0, 0, 0);
+        ivProfile.clearColorFilter();
+        ivProfile.setImageTintList(null);
+        ivProfile.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        ivProfile.setImageBitmap(bitmap);
+    }
+
+    private void showDefaultAvatar() {
+        ivProfile.setImageResource(R.drawable.ic_user);
+
+        // ✅ Important: FIT_CENTER will scale UP the vector to fill the view
+        ivProfile.setScaleType(ImageView.ScaleType.FIT_CENTER);
+
+        // Optional: small padding so it doesn't touch edges
+        int pad = dpToPx(18);   // try 14–22
+        ivProfile.setPadding(pad, pad, pad, pad);
+
+        ivProfile.setColorFilter(ContextCompat.getColor(requireContext(), R.color.primary));
+    }
+
+
+    private int dpToPx(int dp) {
+        return (int) (dp * requireContext().getResources().getDisplayMetrics().density);
     }
 
     private void createDefaultProfile() {
@@ -170,9 +201,7 @@ public class ProfileFragment extends BaseInsetFragment {
                 .addOnSuccessListener(v -> updateUI(user))
                 .addOnFailureListener(e -> {
                     if (getContext() != null) {
-                        Toast.makeText(getContext(),
-                                "Failed to create profile",
-                                Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "Failed to create profile", Toast.LENGTH_SHORT).show();
                     }
                 });
     }
@@ -189,15 +218,17 @@ public class ProfileFragment extends BaseInsetFragment {
     }
 
     private void logout() {
-        if (getActivity() == null) return;
+        if (!isAdded()) return;
 
         firebaseHelper.getAuth().signOut();
 
-        Intent intent = new Intent(requireActivity(), LoginActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        Intent intent = new Intent(getActivity(), LoginActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
-        requireActivity().finish();
+
+        if (getActivity() != null) getActivity().finish();
     }
+
 
     @Override
     public void onResume() {

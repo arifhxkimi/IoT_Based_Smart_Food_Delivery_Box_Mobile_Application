@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.arif.smartfooddeliverybox.R;
 import com.arif.smartfooddeliverybox.models.DeliveryBox;
+import com.arif.smartfooddeliverybox.utils.FirebaseHelper;
 
 import java.util.List;
 
@@ -24,6 +25,9 @@ public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
     private List<DeliveryBox> boxList;
     private final OnBoxClickListener listener;
 
+    private final FirebaseHelper firebaseHelper;
+    private final String currentUserId;
+
     public interface OnBoxClickListener {
         void onBoxClick(DeliveryBox box);
     }
@@ -32,6 +36,9 @@ public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
         this.context = context;
         this.boxList = boxList;
         this.listener = listener;
+
+        firebaseHelper = FirebaseHelper.getInstance();
+        currentUserId = firebaseHelper.getCurrentUserId();
     }
 
     public void setBoxList(List<DeliveryBox> boxList) {
@@ -54,64 +61,120 @@ public class BoxAdapter extends RecyclerView.Adapter<BoxAdapter.BoxViewHolder> {
         // BASIC INFO
         // ----------------------------
         holder.tvBoxNumber.setText(box.getNameSafe());
-        holder.tvLocation.setText("Ready for delivery");
 
+        // ----------------------------
+        // OFFLINE CHECK (physical only)
+        // ----------------------------
         boolean isOffline = box.isPhysical() && !box.isOnline();
 
         // ----------------------------
-        // STATUS TEXT & COLOR
+        // OWNERSHIP CHECK
         // ----------------------------
-        String statusText;
+        String ownerId = box.getUnlockedBy();
+        boolean hasOwner = ownerId != null && !ownerId.trim().isEmpty();
+        boolean isMine = hasOwner && currentUserId != null && currentUserId.equals(ownerId);
+
+        // ----------------------------
+        // STATUS
+        // ----------------------------
+        String rawStatus = box.getStatus() == null ? "" : box.getStatus().toLowerCase();
+
+        String locationText; // your second line
+        String statusText;   // pill text
+
         int statusColor;
         int pillBackgroundColor;
         int iconRes;
 
         if (isOffline) {
-            // 🔒 OFFLINE → looks normal, but unavailable
+            // OFFLINE (Unavailable)
+            locationText = "Device offline";
             statusText = "Unavailable";
             statusColor = Color.parseColor("#9E9E9E");
             pillBackgroundColor = Color.parseColor("#EEEEEE");
             iconRes = R.drawable.ic_lock;
         } else {
-            // 🟢 ONLINE → normal state
-            statusText = box.getStatusText();
-            statusColor = Color.parseColor(box.getStatusColor());
 
-            if (box.isAvailable()) {
-                iconRes = R.drawable.ic_lock_open;
-            } else {
-                iconRes = R.drawable.ic_lock;
+            // Location line (contextual)
+            switch (rawStatus) {
+                case "idle":
+                case "available":
+                    locationText = "Ready for delivery";
+                    break;
+
+                case "unlocked_delivery":
+                case "unlocked_for_delivery":
+                    locationText = "Waiting for rider";
+                    break;
+
+                case "occupied":
+                    locationText = isMine ? "Your food is inside" : "Box is in use";
+                    break;
+
+                case "unlocked_for_retrieval":
+                case "unlocked_retrieval":
+                case "retrieval_in_progress":
+                    locationText = isMine ? "Retrieving your food" : "Retrieval in progress";
+                    break;
+
+                default:
+                    locationText = "Status: " + box.getStatusText();
+                    break;
             }
 
-            // Soft tinted pill background
-            pillBackgroundColor = adjustAlpha(statusColor, 0.15f);
+            // Pill text (short)
+            // ✅ Important UX: show "In Use" if not mine, so user B knows
+            if ((rawStatus.equals("occupied")
+                    || rawStatus.equals("unlocked_for_retrieval")
+                    || rawStatus.equals("unlocked_retrieval")
+                    || rawStatus.equals("retrieval_in_progress"))
+                    && hasOwner && !isMine) {
+
+                statusText = "In Use";
+                statusColor = Color.parseColor("#F44336"); // red-ish
+                pillBackgroundColor = adjustAlpha(statusColor, 0.12f);
+                iconRes = R.drawable.ic_lock;
+
+            } else {
+                // Default uses your model mapping
+                statusText = box.getStatusText();
+
+                // Use your model color, but safeguard if parsing fails
+                int parsed;
+                try {
+                    parsed = Color.parseColor(box.getStatusColor());
+                } catch (Exception e) {
+                    parsed = Color.parseColor("#607D8B");
+                }
+                statusColor = parsed;
+                pillBackgroundColor = adjustAlpha(statusColor, 0.15f);
+
+                // Icon
+                if (box.isAvailable()) iconRes = R.drawable.ic_lock_open;
+                else iconRes = R.drawable.ic_lock;
+            }
         }
 
         // ----------------------------
         // APPLY UI
         // ----------------------------
+        holder.tvLocation.setText(locationText);
+
         holder.tvStatus.setText(statusText);
         holder.tvStatus.setTextColor(statusColor);
 
         holder.ivStatusIcon.setImageResource(iconRes);
         holder.ivStatusIcon.setColorFilter(statusColor);
 
-        holder.statusContainer.setBackgroundTintList(
-                ColorStateList.valueOf(pillBackgroundColor)
-        );
+        holder.statusContainer.setBackgroundTintList(ColorStateList.valueOf(pillBackgroundColor));
 
-        // IMPORTANT:
-        // ❌ DO NOT grey out card
-        // ❌ DO NOT show OFFLINE text on card
         holder.cardView.setAlpha(1f);
 
         // ----------------------------
         // CLICK HANDLING
         // ----------------------------
         holder.itemView.setOnClickListener(v -> {
-            if (listener != null) {
-                listener.onBoxClick(box);
-            }
+            if (listener != null) listener.onBoxClick(box);
         });
     }
 
