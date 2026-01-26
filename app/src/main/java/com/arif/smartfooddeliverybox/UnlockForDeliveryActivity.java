@@ -113,6 +113,14 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
         }
     }
 
+    private void clearReminderCooldownForThisBox() {
+        if (boxId == null) return;
+        getSharedPreferences("food_reminder_prefs", MODE_PRIVATE)
+                .edit()
+                .remove("last_reminder_" + boxId)
+                .apply();
+    }
+
     private void setupBiometrics() {
         executor = ContextCompat.getMainExecutor(this);
 
@@ -400,6 +408,7 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                         if (committed) {
                             // ✅ log cancel so History session can close
                             logHistory("cancelled");
+                            clearReminderCooldownForThisBox();
                         }
                         finish();
                     }

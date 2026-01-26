@@ -8,8 +8,10 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.app.AppCompatDelegate; // Added for consistency
+import androidx.appcompat.app.AppCompatDelegate;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
@@ -27,26 +29,20 @@ public class LoginActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Force Light Mode (Optional, but good for consistency)
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
-        // Initialize Firebase Auth
         mAuth = FirebaseAuth.getInstance();
 
-        // Check if user is already logged in
         FirebaseUser currentUser = mAuth.getCurrentUser();
         if (currentUser != null) {
             navigateToMain();
             return;
         }
 
-        // Initialize views
         initViews();
-
-        // Setup listeners
         setupListeners();
     }
 
@@ -62,21 +58,19 @@ public class LoginActivity extends AppCompatActivity {
     private void setupListeners() {
         btnLogin.setOnClickListener(v -> loginUser());
 
-        tvRegister.setOnClickListener(v -> {
-            startActivity(new Intent(LoginActivity.this, RegisterActivity.class));
-        });
+        tvRegister.setOnClickListener(v ->
+                startActivity(new Intent(LoginActivity.this, RegisterActivity.class))
+        );
 
-        tvForgotPassword.setOnClickListener(v -> {
-            // TODO: Implement forgot password
-            Toast.makeText(this, "Forgot password - Coming soon!", Toast.LENGTH_SHORT).show();
-        });
+        tvForgotPassword.setOnClickListener(v -> showForgotPasswordDialog());
     }
 
-    private void loginUser() {
-        String email = etEmail.getText().toString().trim();
-        String password = etPassword.getText().toString().trim();
+    // ---------------- LOGIN ----------------
 
-        // Validation
+    private void loginUser() {
+        String email = etEmail.getText() != null ? etEmail.getText().toString().trim() : "";
+        String password = etPassword.getText() != null ? etPassword.getText().toString().trim() : "";
+
         if (TextUtils.isEmpty(email)) {
             etEmail.setError("Email is required");
             etEmail.requestFocus();
@@ -95,49 +89,98 @@ public class LoginActivity extends AppCompatActivity {
             return;
         }
 
-        // Show progress
         showProgress(true);
 
-        // Login with Firebase
         mAuth.signInWithEmailAndPassword(email, password)
                 .addOnCompleteListener(task -> {
                     showProgress(false);
 
                     if (task.isSuccessful()) {
-                        // SUCCESS: Only show success toast and navigate
                         Toast.makeText(LoginActivity.this, "Login successful!", Toast.LENGTH_SHORT).show();
                         navigateToMain();
                     } else {
-                        // FAILURE: Only run this block if login actually failed
                         String errorMessage = "Login failed";
 
-                        if (task.getException() != null) {
-                            String error = task.getException().getMessage();
+                        if (task.getException() != null && task.getException().getMessage() != null) {
+                            String error = task.getException().getMessage().toLowerCase();
 
-                            if (error != null) {
-                                error = error.toLowerCase(); // Normalized for checking
-                                if (error.contains("no user record") || error.contains("user not found")) {
-                                    errorMessage = "No account found. Please register first.";
-                                } else if (error.contains("password is invalid") || error.contains("wrong password")) {
-                                    errorMessage = "Incorrect password. Please try again.";
-                                } else if (error.contains("badly formatted") || error.contains("invalid email")) {
-                                    errorMessage = "Invalid email format";
-                                } else if (error.contains("network error")) {
-                                    errorMessage = "Network error. Check your internet connection.";
-                                } else if (error.contains("too many requests")) {
-                                    errorMessage = "Too many login attempts. Please try again later.";
-                                } else if (error.contains("disabled")) {
-                                    errorMessage = "This account has been disabled.";
-                                } else {
-                                    // Use original error message for unknown errors
-                                    errorMessage = task.getException().getMessage();
-                                }
+                            if (error.contains("no user record") || error.contains("user not found")) {
+                                errorMessage = "No account found. Please register first.";
+                            } else if (error.contains("password is invalid") || error.contains("wrong password")) {
+                                errorMessage = "Incorrect password. Please try again.";
+                            } else if (error.contains("badly formatted") || error.contains("invalid email")) {
+                                errorMessage = "Invalid email format.";
+                            } else if (error.contains("network error")) {
+                                errorMessage = "Network error. Check your internet connection.";
+                            } else if (error.contains("too many requests")) {
+                                errorMessage = "Too many login attempts. Please try again later.";
+                            } else if (error.contains("disabled")) {
+                                errorMessage = "This account has been disabled.";
+                            } else {
+                                errorMessage = task.getException().getMessage();
                             }
                         }
+
                         Toast.makeText(LoginActivity.this, errorMessage, Toast.LENGTH_LONG).show();
                     }
                 });
     }
+
+    // ---------------- FORGOT PASSWORD ----------------
+
+    private void showForgotPasswordDialog() {
+        // Prefill with whatever user already typed
+        final TextInputEditText input = new TextInputEditText(this);
+        input.setHint("Enter your email");
+        input.setText(etEmail.getText() != null ? etEmail.getText().toString().trim() : "");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Reset Password")
+                .setMessage("We will send a password reset link to your email.")
+                .setView(input)
+                .setPositiveButton("Send", (dialog, which) -> {
+                    String email = input.getText() != null ? input.getText().toString().trim() : "";
+
+                    if (TextUtils.isEmpty(email)) {
+                        Toast.makeText(this, "Please enter your email", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                        Toast.makeText(this, "Please enter a valid email", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    sendPasswordReset(email);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void sendPasswordReset(@NonNull String email) {
+        showProgress(true);
+
+        mAuth.sendPasswordResetEmail(email)
+                .addOnCompleteListener(task -> {
+                    showProgress(false);
+
+                    if (task.isSuccessful()) {
+                        Toast.makeText(
+                                LoginActivity.this,
+                                "Reset link sent! Check your email inbox/spam.",
+                                Toast.LENGTH_LONG
+                        ).show();
+                    } else {
+                        String msg = "Failed to send reset email.";
+                        if (task.getException() != null && task.getException().getMessage() != null) {
+                            msg = task.getException().getMessage();
+                        }
+                        Toast.makeText(LoginActivity.this, msg, Toast.LENGTH_LONG).show();
+                    }
+                });
+    }
+
+    // ---------------- NAV + UI ----------------
 
     private void navigateToMain() {
         Intent intent = new Intent(LoginActivity.this, MainActivity.class);
@@ -151,5 +194,7 @@ public class LoginActivity extends AppCompatActivity {
         btnLogin.setEnabled(!show);
         etEmail.setEnabled(!show);
         etPassword.setEnabled(!show);
+        tvRegister.setEnabled(!show);
+        tvForgotPassword.setEnabled(!show);
     }
 }

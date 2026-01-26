@@ -330,7 +330,6 @@ public class RetrieveFoodActivity extends BaseInsetActivity {
                 box.setStatus("available");
                 box.setUnlockedBy(null);
                 box.setUnlockedAt(0);
-                box.setDeliveredAt(0); // optional
 
                 // statistics lastUsed
                 if (box.getStatistics() == null) {
@@ -356,6 +355,9 @@ public class RetrieveFoodActivity extends BaseInsetActivity {
                 }
 
                 hasRetrieved = true;
+
+                clearReminderCooldownForThisBox();
+
 
                 // lastUsed server timestamp (separate write is fine here)
                 firebaseHelper.getDatabaseReference()
@@ -404,6 +406,13 @@ public class RetrieveFoodActivity extends BaseInsetActivity {
         ref.updateChildren(data);
     }
 
+    private void clearReminderCooldownForThisBox() {
+        if (boxId == null) return;
+        getSharedPreferences("food_reminder_prefs", MODE_PRIVATE)
+                .edit()
+                .remove("last_reminder_" + boxId)
+                .apply();
+    }
 
     @Override
     protected void onDestroy() {

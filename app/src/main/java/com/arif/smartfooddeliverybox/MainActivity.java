@@ -6,19 +6,24 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.view.WindowCompat;
 import androidx.fragment.app.Fragment;
+import androidx.work.Constraints;
 import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.NetworkType;
+import androidx.work.OneTimeWorkRequest;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
 
 import com.arif.smartfooddeliverybox.fragments.DashboardFragment;
 import com.arif.smartfooddeliverybox.fragments.HistoryFragment;
 import com.arif.smartfooddeliverybox.fragments.ProfileFragment;
-import com.arif.smartfooddeliverybox.FoodReminderWorker;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.firebase.auth.FirebaseAuth;
 
 import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final String WORK_NAME = "food_reminder_worker";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,12 +31,20 @@ public class MainActivity extends AppCompatActivity {
 
         super.onCreate(savedInstanceState);
 
-        // ✅ IMPORTANT: Enable edge-to-edge handling (we will apply insets in fragments)
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-
         setContentView(R.layout.activity_main);
 
-        scheduleFoodReminderWorker();
+        // ✅ Schedule only if logged in
+        if (FirebaseAuth.getInstance().getCurrentUser() != null) {
+            scheduleFoodReminderWorker();
+
+//            // 🚧 TEST ONLY (comment out after testing)
+//            scheduleTestFoodReminder();
+
+        } else {
+            // optional: cancel it if somehow still exists
+            WorkManager.getInstance(this).cancelUniqueWork(WORK_NAME);
+        }
 
         BottomNavigationView bottomNav = findViewById(R.id.bottom_navigation);
 
@@ -63,17 +76,33 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void scheduleFoodReminderWorker() {
+        Constraints constraints = new Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build();
+
         PeriodicWorkRequest request =
                 new PeriodicWorkRequest.Builder(
                         FoodReminderWorker.class,
                         15, TimeUnit.MINUTES
-                ).build();
+                )
+                        .setConstraints(constraints)
+                        .build();
 
         WorkManager.getInstance(this)
                 .enqueueUniquePeriodicWork(
-                        "food_reminder_worker",
+                        WORK_NAME,
                         ExistingPeriodicWorkPolicy.KEEP,
                         request
                 );
     }
+
+    private void scheduleTestFoodReminder() {
+        OneTimeWorkRequest testRequest =
+                new OneTimeWorkRequest.Builder(FoodReminderWorker.class)
+                        .setInitialDelay(30, TimeUnit.SECONDS)
+                        .build();
+
+        WorkManager.getInstance(this).enqueue(testRequest);
+    }
+
 }
