@@ -23,9 +23,12 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.MutableData;
+import com.google.firebase.database.ServerValue;
 import com.google.firebase.database.Transaction;
 import com.google.firebase.database.ValueEventListener;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Executor;
 
 public class UnlockForDeliveryActivity extends BaseInsetActivity {
@@ -47,13 +50,16 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
     private BiometricPrompt biometricPrompt;
     private BiometricPrompt.PromptInfo promptInfo;
 
+    // ✅ guards (avoid repeated calls while transaction is running)
+    private boolean deliveryHandled = false;
+    private boolean doneDialogShown = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_unlock_for_delivery);
 
-        // Fix status bar overlap for this activity (BaseInsetActivity)
         applyStatusBarInset();
 
         firebaseHelper = FirebaseHelper.getInstance();
@@ -119,7 +125,6 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
 
                     @Override
                     public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
-                        // user cancelled / error
                         Toast.makeText(UnlockForDeliveryActivity.this, errString, Toast.LENGTH_SHORT).show();
                     }
 
@@ -142,24 +147,15 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
             return;
         }
 
-        // If biometrics available, require it
         BiometricManager bm = BiometricManager.from(this);
         if (bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                 == BiometricManager.BIOMETRIC_SUCCESS) {
             biometricPrompt.authenticate(promptInfo);
         } else {
-            // fallback (no biometric enrolled)
             unlockBoxSafely();
         }
     }
 
-    /**
-     * ✅ Correct + safe unlock flow:
-     * - transaction to guarantee one user wins
-     * - block if physical but offline (heartbeat)
-     * - allow re-entry if already unlocked by me
-     * - write status + unlockedBy + unlockedAt
-     */
     private void unlockBoxSafely() {
         if (boxId == null || boxId.trim().isEmpty()) {
             showError("Invalid box");
@@ -180,32 +176,26 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                 DeliveryBox box = currentData.getValue(DeliveryBox.class);
                 if (box == null) return Transaction.abort();
 
-                // ✅ Block unlock if physical device is offline (no heartbeat)
                 if (box.isPhysical() && !box.isOnline()) {
                     return Transaction.abort();
                 }
 
                 String uid = currentUserId;
 
-                // ✅ Allow if already unlocked by me (re-entering same session)
                 String status = box.getStatus();
                 if (status != null && status.equalsIgnoreCase("unlocked_delivery")
                         && uid != null && uid.equals(box.getUnlockedBy())) {
                     return Transaction.success(currentData);
                 }
 
-                // ✅ Must be available/idle only
                 if (status == null) return Transaction.abort();
                 if (!status.equalsIgnoreCase("available") && !status.equalsIgnoreCase("idle")) {
                     return Transaction.abort();
                 }
 
-                // ✅ Commit lock to this user
                 box.setStatus("unlocked_delivery");
                 box.setUnlockedBy(uid);
                 box.setUnlockedAt(System.currentTimeMillis());
-
-                // Optional: clear deliveredAt when starting a new delivery session
                 box.setDeliveredAt(0);
 
                 currentData.setValue(box);
@@ -230,11 +220,12 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                 }
 
                 unlockCommitted = true;
+                // reset delivery handled flags for this session
+                deliveryHandled = false;
+                doneDialogShown = false;
+
                 updateUiForUnlockedState();
-
-                // ✅ Use consistent action key for history filtering
                 logHistory("unlocked_for_delivery");
-
                 notificationHelper.notifyBoxUnlocked(boxNumber);
             }
         });
@@ -260,12 +251,6 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
         btnUnlock.setText("Unlocked");
     }
 
-    /**
-     * ✅ Monitor box changes:
-     * - if status unlocked_delivery AND unlockedBy == me -> keep UI consistent
-     * - if status unlocked_delivery BUT unlockedBy != me -> exit (safety)
-     * - when status becomes occupied -> log food_stored (once) + show done
-     */
     private void startMonitoring() {
         if (boxId == null) return;
 
@@ -278,7 +263,6 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                 String status = box.getStatus() == null ? "" : box.getStatus().toLowerCase();
                 String owner = box.getUnlockedBy();
 
-                // ✅ Re-sync if user reopened this page
                 if (status.equals("unlocked_delivery")
                         && currentUserId != null
                         && currentUserId.equals(owner)) {
@@ -286,7 +270,6 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                     updateUiForUnlockedState();
                 }
 
-                // ✅ If somehow taken over
                 if (status.equals("unlocked_delivery")
                         && currentUserId != null
                         && owner != null
@@ -296,34 +279,23 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                     return;
                 }
 
-                // ✅ Delivery completed
+                // ✅ Delivery completed: status becomes occupied
                 if (status.equals("occupied") && unlockCommitted) {
-
-                    // Log only once
-                    if (box.getDeliveredAt() == 0) {
-                        // set deliveredAt so we don't spam logs when listener fires again
-                        firebaseHelper.getDatabaseReference()
-                                .child("boxes")
-                                .child(boxId)
-                                .child("deliveredAt")
-                                .setValue(System.currentTimeMillis());
-                    }
-
-                    logHistory("food_stored");
-                    notificationHelper.notifyFoodDelivered(boxNumber);
-                    showDoneDialog();
+                    handleFoodStoredOnce();
                 }
 
-                // Extra: if user stays here but status becomes available again, reset UI
+                // If box becomes available again, reset state
                 if ((status.equals("available") || status.equals("idle")) && unlockCommitted) {
                     unlockCommitted = false;
+                    deliveryHandled = false;
+                    doneDialogShown = false;
                     updateInitialUI();
                 }
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                // optional: show message
+                // optional
             }
         };
 
@@ -334,9 +306,64 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
     }
 
     /**
-     * ✅ Cancel only if owner == me.
-     * Reset to available + clear unlockedBy/unlockedAt
+     * ✅ The bulletproof "only once" method:
+     * Use a transaction on deliveredAt so only the first caller wins.
      */
+    private void handleFoodStoredOnce() {
+        if (deliveryHandled) {
+            // If already handled, just ensure dialog shown once
+            if (!doneDialogShown) {
+                doneDialogShown = true;
+                showDoneDialog();
+            }
+            return;
+        }
+
+        deliveryHandled = true;
+
+        DatabaseReference deliveredAtRef = firebaseHelper.getDatabaseReference()
+                .child("boxes")
+                .child(boxId)
+                .child("deliveredAt");
+
+        deliveredAtRef.runTransaction(new Transaction.Handler() {
+            @NonNull
+            @Override
+            public Transaction.Result doTransaction(@NonNull MutableData currentData) {
+                Long existing = currentData.getValue(Long.class);
+
+                // if already set, abort (means already logged before)
+                if (existing != null && existing != 0) {
+                    return Transaction.abort();
+                }
+
+                currentData.setValue(System.currentTimeMillis());
+                return Transaction.success(currentData);
+            }
+
+            @Override
+            public void onComplete(DatabaseError error, boolean committed, DataSnapshot snapshot) {
+                // If we lost the race (already marked), do not log again
+                if (!committed) {
+                    if (!doneDialogShown) {
+                        doneDialogShown = true;
+                        showDoneDialog();
+                    }
+                    return;
+                }
+
+                // ✅ First time only
+                logHistory("food_stored");
+                notificationHelper.notifyFoodDelivered(boxNumber);
+
+                if (!doneDialogShown) {
+                    doneDialogShown = true;
+                    showDoneDialog();
+                }
+            }
+        });
+    }
+
     private void cancelUnlock() {
         if (boxId == null) return;
 
@@ -355,7 +382,6 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                         if (box.getUnlockedBy() == null) return Transaction.abort();
                         if (!uid.equals(box.getUnlockedBy())) return Transaction.abort();
 
-                        // Only cancel if currently unlocked_delivery
                         String status = box.getStatus();
                         if (status == null || !status.equalsIgnoreCase("unlocked_delivery")) {
                             return Transaction.abort();
@@ -365,17 +391,21 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                         box.setUnlockedBy(null);
                         box.setUnlockedAt(0);
 
-                        // keep deliveredAt unchanged here
                         data.setValue(box);
                         return Transaction.success(data);
                     }
 
                     @Override
                     public void onComplete(DatabaseError error, boolean committed, DataSnapshot snapshot) {
+                        if (committed) {
+                            // ✅ log cancel so History session can close
+                            logHistory("cancelled");
+                        }
                         finish();
                     }
                 });
     }
+
 
     private void logHistory(String action) {
         String uid = firebaseHelper.getCurrentUserId();
@@ -386,9 +416,12 @@ public class UnlockForDeliveryActivity extends BaseInsetActivity {
                 .child(uid)
                 .push();
 
-        ref.child("boxNumber").setValue(boxNumber);
-        ref.child("action").setValue(action);
-        ref.child("timestamp").setValue(System.currentTimeMillis());
+        Map<String, Object> data = new HashMap<>();
+        data.put("boxNumber", boxNumber);
+        data.put("action", action);
+        data.put("timestamp", ServerValue.TIMESTAMP); // ✅ consistent server time
+
+        ref.updateChildren(data);
     }
 
     private void showDoneDialog() {

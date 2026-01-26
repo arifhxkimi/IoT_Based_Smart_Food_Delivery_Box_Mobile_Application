@@ -1,5 +1,6 @@
 package com.arif.smartfooddeliverybox.fragments;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -16,12 +17,17 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.arif.smartfooddeliverybox.R;
+import com.arif.smartfooddeliverybox.SessionDetailsActivity;
 import com.arif.smartfooddeliverybox.utils.FirebaseHelper;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.datepicker.MaterialDatePicker;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.ValueEventListener;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -45,13 +51,22 @@ public class HistoryFragment extends BaseInsetFragment {
 
     private FirebaseHelper firebaseHelper;
     private ValueEventListener historyListener;
+    private DatabaseReference historyRef;
 
+    // Raw history (from Firebase)
     private final List<HistoryItem> allHistory = new ArrayList<>();
+
+    // Sessions (grouped UI)
+    private final List<DeliverySession> allSessions = new ArrayList<>();
+
+    // Adapter list (date headers + sessions)
     private final List<HistoryListItem> displayList = new ArrayList<>();
     private HistoryAdapter adapter;
 
     private Long selectedDate = null;
-    private String currentActionFilter = "all";
+
+    // Filters: all / in_progress / completed / cancelled
+    private String currentFilter = "all";
 
     @Nullable
     @Override
@@ -59,8 +74,6 @@ public class HistoryFragment extends BaseInsetFragment {
                              @Nullable Bundle savedInstanceState) {
 
         View view = inflater.inflate(R.layout.fragment_history, container, false);
-
-        // ✅ Fix status bar overlap for this fragment
         applyStatusBarInset(view);
 
         firebaseHelper = FirebaseHelper.getInstance();
@@ -79,10 +92,17 @@ public class HistoryFragment extends BaseInsetFragment {
         recyclerView.setAdapter(adapter);
 
         swipeRefresh.setOnRefreshListener(this::loadHistory);
-        chipGroupFilter.setOnCheckedChangeListener((group, checkedId) -> applyFilters());
+
+        chipGroupFilter.setOnCheckedChangeListener((group, checkedId) -> {
+            updateCurrentFilter(checkedId);
+            applyFilters();
+        });
 
         btnCalendar.setOnClickListener(v -> showDatePicker());
         btnResetDate.setOnClickListener(v -> clearDateFilter());
+
+        // init filter state
+        updateCurrentFilter(chipGroupFilter.getCheckedChipId());
 
         loadHistory();
         return view;
@@ -91,16 +111,16 @@ public class HistoryFragment extends BaseInsetFragment {
     // ---------------- LOAD HISTORY ----------------
 
     private void loadHistory() {
-        if (firebaseHelper.getCurrentUserId() == null) return;
-
-        swipeRefresh.setRefreshing(true);
         String userId = firebaseHelper.getCurrentUserId();
+        if (userId == null) return;
 
-        if (historyListener != null) {
-            firebaseHelper.getDatabaseReference()
-                    .child("history").child(userId)
-                    .removeEventListener(historyListener);
-        }
+        safeSetRefreshing(true);
+
+        historyRef = firebaseHelper.getDatabaseReference()
+                .child("history")
+                .child(userId);
+
+        detachHistoryListener();
 
         historyListener = new ValueEventListener() {
             @Override
@@ -121,80 +141,187 @@ public class HistoryFragment extends BaseInsetFragment {
                     }
                 }
 
+                // newest first
                 Collections.sort(allHistory, (a, b) -> Long.compare(b.timestamp, a.timestamp));
+
+                // dedupe spam (same action+box within 10 seconds)
+                List<HistoryItem> deduped = new ArrayList<>();
+                HistoryItem prevKept = null;
+                for (HistoryItem item : allHistory) {
+                    if (isDuplicate(item, prevKept)) continue;
+                    deduped.add(item);
+                    prevKept = item;
+                }
+                allHistory.clear();
+                allHistory.addAll(deduped);
+
+                // build sessions
+                allSessions.clear();
+                allSessions.addAll(buildSessionsFromHistory(allHistory));
+
                 applyFilters();
-                swipeRefresh.setRefreshing(false);
+                safeSetRefreshing(false);
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                swipeRefresh.setRefreshing(false);
-                Toast.makeText(getContext(), "Error loading history: " + error.getMessage(),
+                safeSetRefreshing(false);
+                if (!isAdded() || getContext() == null) return;
+
+                Toast.makeText(requireContext(),
+                        "Error loading history: " + error.getMessage(),
                         Toast.LENGTH_SHORT).show();
             }
         };
 
-        firebaseHelper.getDatabaseReference()
-                .child("history").child(userId)
-                .addValueEventListener(historyListener);
+        historyRef.addValueEventListener(historyListener);
     }
 
-    // ---------------- FILTERING ----------------
+    private void safeSetRefreshing(boolean refreshing) {
+        if (swipeRefresh == null) return;
+        swipeRefresh.setRefreshing(refreshing);
+    }
+
+    private void detachHistoryListener() {
+        if (historyRef != null && historyListener != null) {
+            historyRef.removeEventListener(historyListener);
+        }
+        historyListener = null;
+    }
+
+    // ---------------- FILTERS ----------------
+
+    private void updateCurrentFilter(int checkedId) {
+        currentFilter = "all";
+
+        if (checkedId == R.id.chipInProgress) {
+            currentFilter = "in_progress";
+        } else if (checkedId == R.id.chipCompleted) {
+            currentFilter = "completed";
+        } else if (checkedId == R.id.chipCancelled) {
+            currentFilter = "cancelled";
+        } else {
+            currentFilter = "all";
+        }
+    }
+
+    private boolean passesSessionFilter(DeliverySession s) {
+        if ("all".equals(currentFilter)) return true;
+
+        String st = safe(s.status);
+        if (st.isEmpty()) st = "in_progress";
+
+        return st.equals(currentFilter);
+    }
+
+    // ---------------- DUPLICATE RULE ----------------
+
+    private boolean isDuplicate(HistoryItem current, HistoryItem previousKept) {
+        if (previousKept == null) return false;
+        if (current.action == null || previousKept.action == null) return false;
+        if (current.box == null || previousKept.box == null) return false;
+
+        if (!current.action.equals(previousKept.action)) return false;
+        if (!current.box.equals(previousKept.box)) return false;
+
+        return Math.abs(current.timestamp - previousKept.timestamp) <= 10_000;
+    }
+
+    // ---------------- SESSION GROUPING ----------------
+
+    private List<DeliverySession> buildSessionsFromHistory(List<HistoryItem> newestFirst) {
+
+        List<HistoryItem> asc = new ArrayList<>(newestFirst);
+        Collections.sort(asc, (a, b) -> Long.compare(a.timestamp, b.timestamp));
+
+        List<DeliverySession> sessions = new ArrayList<>();
+        DeliverySession current = null;
+
+        for (HistoryItem e : asc) {
+            String a = safe(e.action);
+
+            boolean isStart = a.equals("unlocked_for_delivery") || a.equals("unlocked_delivery");
+            boolean isEnd = a.equals("retrieved")
+                    || a.equals("delivery_collected")
+                    || a.equals("collected")
+                    || a.equals("cancelled");
+
+            if (isStart) {
+                if (current != null) {
+                    current.status = "in_progress";
+                    sessions.add(current);
+                }
+
+                current = new DeliverySession();
+                current.boxNumber = e.box;
+                current.startAt = e.timestamp;
+                current.status = "in_progress";
+                current.events.add(e);
+                current.hasUnlockDelivery = true;
+                continue;
+            }
+
+            if (current == null) continue;
+
+            current.events.add(e);
+
+            if (a.equals("food_stored")) current.hasFoodStored = true;
+            if (a.equals("unlocked_for_retrieval") || a.equals("unlocked_retrieval")) current.hasUnlockRetrieval = true;
+
+            if (isEnd) {
+                current.endAt = e.timestamp;
+
+                if (a.equals("cancelled")) {
+                    current.status = "cancelled";
+                } else {
+                    current.hasCollected = true;
+                    current.status = "completed";
+                }
+
+                sessions.add(current);
+                current = null;
+            }
+        }
+
+        if (current != null) {
+            current.status = "in_progress";
+            sessions.add(current);
+        }
+
+        Collections.sort(sessions, (s1, s2) -> Long.compare(s2.startAt, s1.startAt));
+        return sessions;
+    }
+
+    private String safe(String s) {
+        return s == null ? "" : s.toLowerCase().trim();
+    }
+
+    // ---------------- APPLY FILTERS ----------------
 
     private void applyFilters() {
         displayList.clear();
 
-        currentActionFilter = "all";
-        int id = chipGroupFilter.getCheckedChipId();
-
-        if (id == R.id.chipUnlocks) {
-            currentActionFilter = "unlocks";
-        } else if (id == R.id.chipFoodStored || id == R.id.chipDeliveries) {
-            currentActionFilter = "food_stored";
-        } else if (id == R.id.chipRetrievals) {
-            currentActionFilter = "retrievals";
-        }
-
         SimpleDateFormat dateHeaderFormat = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault());
         String lastDate = "";
 
-        for (HistoryItem item : allHistory) {
+        for (DeliverySession s : allSessions) {
 
-            if (!passesActionFilter(item.action, currentActionFilter)) continue;
+            if (!passesSessionFilter(s)) continue;
 
-            if (selectedDate != null && !isSameDay(item.timestamp, selectedDate)) continue;
+            if (selectedDate != null && !isSameDay(s.startAt, selectedDate)) continue;
 
-            String date = dateHeaderFormat.format(new Date(item.timestamp));
+            String date = dateHeaderFormat.format(new Date(s.startAt));
             if (!date.equals(lastDate)) {
                 displayList.add(new HistoryListItem(date));
                 lastDate = date;
             }
 
-            displayList.add(new HistoryListItem(item));
+            displayList.add(new HistoryListItem(s));
         }
 
         adapter.notifyDataSetChanged();
         updateEmptyState();
         updateHeaderCount();
-    }
-
-    private boolean passesActionFilter(String action, String filter) {
-        if ("all".equals(filter)) return true;
-
-        if ("unlocks".equals(filter)) {
-            return action.equals("unlocked")
-                    || action.equals("unlocked_for_delivery")
-                    || action.equals("unlocked_for_retrieval");
-        }
-
-        if ("retrievals".equals(filter)) {
-            return action.equals("retrieved")
-                    || action.equals("delivery_collected")
-                    || action.equals("collected")
-                    || action.equals("unlocked_for_retrieval");
-        }
-
-        return action.equals(filter);
     }
 
     // ---------------- DATE PICKER ----------------
@@ -260,12 +387,12 @@ public class HistoryFragment extends BaseInsetFragment {
             recyclerView.setVisibility(View.GONE);
 
             String message;
-            if (selectedDate != null && !"all".equals(currentActionFilter)) {
-                message = "No activities found for selected date and filter";
+            if (selectedDate != null && !"all".equals(currentFilter)) {
+                message = "No sessions found for selected date and filter";
             } else if (selectedDate != null) {
-                message = "No activities found on this date";
-            } else if (!"all".equals(currentActionFilter)) {
-                message = "No activities found for this filter";
+                message = "No sessions found on this date";
+            } else if (!"all".equals(currentFilter)) {
+                message = "No sessions found for this filter";
             } else {
                 message = "No activity yet\n\nYour delivery history will appear here";
             }
@@ -281,11 +408,11 @@ public class HistoryFragment extends BaseInsetFragment {
     private void updateHeaderCount() {
         if (tvDateFilter == null) return;
 
-        int totalItems = allHistory.size();
-        int visibleItems = 0;
+        int totalSessions = allSessions.size();
+        int visibleSessions = 0;
 
         for (HistoryListItem item : displayList) {
-            if (item.type == HistoryListItem.TYPE_EVENT) visibleItems++;
+            if (item.type == HistoryListItem.TYPE_SESSION) visibleSessions++;
         }
 
         String headerText;
@@ -295,13 +422,13 @@ public class HistoryFragment extends BaseInsetFragment {
             sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
             String dateStr = sdf.format(new Date(selectedDate));
 
-            headerText = (visibleItems == 0)
-                    ? "📅 " + dateStr + " - No activities"
-                    : "📅 " + dateStr + " - " + visibleItems + " activities";
+            headerText = (visibleSessions == 0)
+                    ? "📅 " + dateStr + " - No sessions"
+                    : "📅 " + dateStr + " - " + visibleSessions + " sessions";
         } else {
-            if (totalItems == 0) headerText = "No activities yet";
-            else if (!"all".equals(currentActionFilter)) headerText = visibleItems + " of " + totalItems + " activities";
-            else headerText = totalItems + " total activities";
+            if (totalSessions == 0) headerText = "No activities yet";
+            else if (!"all".equals(currentFilter)) headerText = visibleSessions + " of " + totalSessions + " sessions";
+            else headerText = totalSessions + " total sessions";
         }
 
         tvDateFilter.setText(headerText);
@@ -310,11 +437,48 @@ public class HistoryFragment extends BaseInsetFragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        if (historyListener != null && firebaseHelper != null) {
-            firebaseHelper.getDatabaseReference()
-                    .child("history")
-                    .removeEventListener(historyListener);
-        }
+
+        detachHistoryListener();
+        historyRef = null;
+
+        swipeRefresh = null;
+        recyclerView = null;
+        layoutEmpty = null;
+        tvEmptyMessage = null;
+        chipGroupFilter = null;
+        btnCalendar = null;
+        btnResetDate = null;
+        tvDateFilter = null;
+    }
+
+    // ---------------- SESSION DETAILS OPEN ----------------
+
+    private void openSessionDetails(DeliverySession s) {
+        try {
+            JSONObject obj = new JSONObject();
+            obj.put("boxNumber", s.boxNumber == null ? "" : s.boxNumber);
+            obj.put("status", s.status == null ? "in_progress" : s.status);
+            obj.put("startAt", s.startAt);
+            obj.put("endAt", s.endAt);
+
+            List<HistoryItem> asc = new ArrayList<>(s.events);
+            Collections.sort(asc, (a, b) -> Long.compare(a.timestamp, b.timestamp));
+
+            JSONArray arr = new JSONArray();
+            for (HistoryItem e : asc) {
+                JSONObject eo = new JSONObject();
+                eo.put("action", e.action == null ? "" : e.action);
+                eo.put("timestamp", e.timestamp);
+                eo.put("boxNumber", e.box == null ? "" : e.box);
+                arr.put(eo);
+            }
+            obj.put("events", arr);
+
+            Intent i = new Intent(requireContext(), SessionDetailsActivity.class);
+            i.putExtra(SessionDetailsActivity.EXTRA_SESSION_JSON, obj.toString());
+            startActivity(i);
+
+        } catch (Exception ignored) { }
     }
 
     // ---------------- DATA CLASSES ----------------
@@ -331,22 +495,36 @@ public class HistoryFragment extends BaseInsetFragment {
         }
     }
 
+    private static class DeliverySession {
+        String boxNumber;
+        long startAt;
+        long endAt; // 0 if not ended
+        String status; // in_progress / completed / cancelled
+
+        boolean hasUnlockDelivery;
+        boolean hasFoodStored;
+        boolean hasUnlockRetrieval;
+        boolean hasCollected;
+
+        List<HistoryItem> events = new ArrayList<>();
+    }
+
     private static class HistoryListItem {
         static final int TYPE_DATE = 0;
-        static final int TYPE_EVENT = 1;
+        static final int TYPE_SESSION = 1;
 
         int type;
         String date;
-        HistoryItem item;
+        DeliverySession session;
 
         HistoryListItem(String date) {
             this.type = TYPE_DATE;
             this.date = date;
         }
 
-        HistoryListItem(HistoryItem item) {
-            this.type = TYPE_EVENT;
-            this.item = item;
+        HistoryListItem(DeliverySession session) {
+            this.type = TYPE_SESSION;
+            this.session = session;
         }
     }
 
@@ -355,7 +533,7 @@ public class HistoryFragment extends BaseInsetFragment {
     private class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         private final List<HistoryListItem> items;
-        private final SimpleDateFormat timeFormat = new SimpleDateFormat("hh:mm a", Locale.getDefault());
+        private final SimpleDateFormat timeOnly = new SimpleDateFormat("hh:mm a", Locale.getDefault());
 
         HistoryAdapter(List<HistoryListItem> items) {
             this.items = items;
@@ -376,49 +554,50 @@ public class HistoryFragment extends BaseInsetFragment {
             } else {
                 View v = LayoutInflater.from(parent.getContext())
                         .inflate(R.layout.item_history_simple, parent, false);
-                return new EventVH(v);
+                return new SessionVH(v);
             }
         }
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int pos) {
-            HistoryListItem item = items.get(pos);
+            HistoryListItem li = items.get(pos);
 
             if (holder instanceof DateVH) {
-                ((DateVH) holder).tvDate.setText(item.date);
+                ((DateVH) holder).tvDate.setText(li.date);
                 return;
             }
 
-            EventVH vh = (EventVH) holder;
-            HistoryItem hi = item.item;
+            SessionVH vh = (SessionVH) holder;
+            DeliverySession s = li.session;
 
-            vh.tvBox.setText("Box " + hi.box);
-            vh.tvTime.setText(timeFormat.format(new Date(hi.timestamp)));
+            vh.tvBox.setText("Box " + (s.boxNumber == null ? "" : s.boxNumber));
 
-            vh.tvAction.setText(formatActionLabel(hi.action));
+            if (s.endAt > 0) {
+                vh.tvTime.setText(timeOnly.format(new Date(s.startAt)) + " → " + timeOnly.format(new Date(s.endAt)));
+            } else {
+                vh.tvTime.setText(timeOnly.format(new Date(s.startAt)));
+            }
+
+            vh.tvAction.setText(getStatusLabel(s));
+            vh.tvSubtitle.setText(getTimelineLabel(s));
             vh.tvAction.setTextColor(0xFF212121);
+
+            vh.itemView.setOnClickListener(v -> openSessionDetails(s));
         }
 
-        private String formatActionLabel(String action) {
-            switch (action) {
-                case "unlocked":
-                case "unlocked_for_delivery":
-                    return "🔓 Unlocked for Delivery";
+        private String getStatusLabel(DeliverySession s) {
+            String st = safe(s.status);
+            if (st.equals("cancelled")) return "❌ Cancelled";
+            if (st.equals("completed") || s.hasCollected) return "✅ Completed";
+            return "🟡 In Progress";
+        }
 
-                case "unlocked_for_retrieval":
-                    return "📦 Unlocked for Retrieval";
-
-                case "food_stored":
-                    return "🍕 Food Stored";
-
-                case "retrieved":
-                case "delivery_collected":
-                case "collected":
-                    return "✅ Delivery Collected";
-
-                default:
-                    return action.replace("_", " ");
-            }
+        private String getTimelineLabel(DeliverySession s) {
+            String st = safe(s.status);
+            if (st.equals("cancelled")) return "Unlocked → Cancelled";
+            if (s.hasCollected) return "Unlocked → Stored → Retrieved";
+            if (s.hasFoodStored) return "Unlocked → Stored";
+            return "Unlocked → Waiting for food";
         }
 
         @Override
@@ -434,11 +613,12 @@ public class HistoryFragment extends BaseInsetFragment {
             }
         }
 
-        class EventVH extends RecyclerView.ViewHolder {
-            TextView tvAction, tvBox, tvTime;
-            EventVH(View v) {
+        class SessionVH extends RecyclerView.ViewHolder {
+            TextView tvAction, tvSubtitle, tvBox, tvTime;
+            SessionVH(View v) {
                 super(v);
                 tvAction = v.findViewById(R.id.tvAction);
+                tvSubtitle = v.findViewById(R.id.tvSubtitle);
                 tvBox = v.findViewById(R.id.tvBox);
                 tvTime = v.findViewById(R.id.tvTime);
             }

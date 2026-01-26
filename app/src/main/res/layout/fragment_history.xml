@@ -95,40 +95,33 @@
                 android:id="@+id/chipAll"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="📋 All Actions"
+                android:text="📋 All"
                 android:checked="true"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
             <com.google.android.material.chip.Chip
-                android:id="@+id/chipUnlocks"
+                android:id="@+id/chipInProgress"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="🔓 Unlocks"
+                android:text="🟡 In Progress"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
             <com.google.android.material.chip.Chip
-                android:id="@+id/chipFoodStored"
+                android:id="@+id/chipCompleted"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="📥 Food Stored"
+                android:text="✅ Completed"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
             <com.google.android.material.chip.Chip
-                android:id="@+id/chipDeliveries"
+                android:id="@+id/chipCancelled"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="📦 Deliveries"
-                android:visibility="gone"
-                style="@style/Widget.MaterialComponents.Chip.Choice"/>
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipRetrievals"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="✅ Retrieved"
+                android:text="❌ Cancelled"
                 style="@style/Widget.MaterialComponents.Chip.Choice"/>
 
         </com.google.android.material.chip.ChipGroup>
+
 
     </HorizontalScrollView>
 

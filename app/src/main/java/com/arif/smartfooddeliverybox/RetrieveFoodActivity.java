@@ -23,6 +23,9 @@ import com.google.firebase.database.ServerValue;
 import com.google.firebase.database.Transaction;
 import com.google.firebase.database.ValueEventListener;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class RetrieveFoodActivity extends BaseInsetActivity {
 
     private MaterialToolbar toolbar;
@@ -393,12 +396,14 @@ public class RetrieveFoodActivity extends BaseInsetActivity {
                 .child(userId)
                 .push();
 
-        ref.child("boxNumber").setValue(boxNumber);
-        ref.child("action").setValue(action);
+        Map<String, Object> data = new HashMap<>();
+        data.put("boxNumber", boxNumber);
+        data.put("action", action);
+        data.put("timestamp", ServerValue.TIMESTAMP);
 
-        // Use server time (ok)
-        ref.child("timestamp").setValue(ServerValue.TIMESTAMP);
+        ref.updateChildren(data);
     }
+
 
     @Override
     protected void onDestroy() {

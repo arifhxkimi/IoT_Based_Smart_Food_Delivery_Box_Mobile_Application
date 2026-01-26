@@ -64,6 +64,9 @@
             android:name=".AboutActivity"
             android:parentActivityName=".MainActivity" />
 
+        <activity android:name=".SessionDetailsActivity" />
+
+
     </application>
 
 </manifest>
