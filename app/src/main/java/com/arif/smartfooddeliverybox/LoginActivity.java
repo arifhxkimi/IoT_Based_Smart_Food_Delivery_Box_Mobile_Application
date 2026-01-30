@@ -12,6 +12,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.splashscreen.SplashScreen;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
@@ -29,13 +30,16 @@ public class LoginActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+        // ✅ Splash Screen (must be BEFORE super.onCreate)
+        SplashScreen.installSplashScreen(this);
 
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
         mAuth = FirebaseAuth.getInstance();
 
+        // ✅ Auto-login if already logged in
         FirebaseUser currentUser = mAuth.getCurrentUser();
         if (currentUser != null) {
             navigateToMain();
@@ -96,7 +100,7 @@ public class LoginActivity extends AppCompatActivity {
                     showProgress(false);
 
                     if (task.isSuccessful()) {
-                        Toast.makeText(LoginActivity.this, "Login successful!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Login successful!", Toast.LENGTH_SHORT).show();
                         navigateToMain();
                     } else {
                         String errorMessage = "Login failed";
@@ -121,7 +125,7 @@ public class LoginActivity extends AppCompatActivity {
                             }
                         }
 
-                        Toast.makeText(LoginActivity.this, errorMessage, Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show();
                     }
                 });
     }
@@ -129,7 +133,6 @@ public class LoginActivity extends AppCompatActivity {
     // ---------------- FORGOT PASSWORD ----------------
 
     private void showForgotPasswordDialog() {
-        // Prefill with whatever user already typed
         final TextInputEditText input = new TextInputEditText(this);
         input.setHint("Enter your email");
         input.setText(etEmail.getText() != null ? etEmail.getText().toString().trim() : "");
@@ -166,8 +169,8 @@ public class LoginActivity extends AppCompatActivity {
 
                     if (task.isSuccessful()) {
                         Toast.makeText(
-                                LoginActivity.this,
-                                "Reset link sent! Check your email inbox/spam.",
+                                this,
+                                "Reset link sent! Check your email inbox or spam.",
                                 Toast.LENGTH_LONG
                         ).show();
                     } else {
@@ -175,7 +178,7 @@ public class LoginActivity extends AppCompatActivity {
                         if (task.getException() != null && task.getException().getMessage() != null) {
                             msg = task.getException().getMessage();
                         }
-                        Toast.makeText(LoginActivity.this, msg, Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
                     }
                 });
     }

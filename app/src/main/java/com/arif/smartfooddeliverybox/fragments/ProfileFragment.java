@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat;
 import com.arif.smartfooddeliverybox.AboutActivity;
 import com.arif.smartfooddeliverybox.ChangePasswordActivity;
 import com.arif.smartfooddeliverybox.EditProfileActivity;
+import com.arif.smartfooddeliverybox.FaqActivity;   // ✅ add
 import com.arif.smartfooddeliverybox.LoginActivity;
 import com.arif.smartfooddeliverybox.NotificationsActivity;
 import com.arif.smartfooddeliverybox.R;
@@ -35,7 +36,7 @@ public class ProfileFragment extends BaseInsetFragment {
     private ImageView ivProfile;
     private TextView tvUserName, tvUserEmail, tvUserPhone;
     private View btnEditProfile, btnChangePassword, btnLogout;
-    private View btnNotifications, btnAbout;
+    private View btnNotifications, btnAbout, btnFaq; // ✅ add
     private ProgressBar progressBar;
 
     private FirebaseHelper firebaseHelper;
@@ -68,6 +69,10 @@ public class ProfileFragment extends BaseInsetFragment {
         btnLogout = view.findViewById(R.id.btnLogout);
         btnNotifications = view.findViewById(R.id.btnNotifications);
         btnAbout = view.findViewById(R.id.btnAbout);
+
+        // ✅ new FAQ row
+        btnFaq = view.findViewById(R.id.btnFaq);
+
         progressBar = view.findViewById(R.id.progressBar);
 
         firebaseHelper = FirebaseHelper.getInstance();
@@ -92,6 +97,12 @@ public class ProfileFragment extends BaseInsetFragment {
 
         btnAbout.setOnClickListener(v ->
                 startActivity(new Intent(getActivity(), AboutActivity.class)));
+
+        // ✅ open FAQ page
+        if (btnFaq != null) {
+            btnFaq.setOnClickListener(v ->
+                    startActivity(new Intent(getActivity(), FaqActivity.class)));
+        }
 
         btnLogout.setOnClickListener(v -> showLogoutDialog());
     }
@@ -127,9 +138,7 @@ public class ProfileFragment extends BaseInsetFragment {
                     public void onCancelled(@NonNull DatabaseError error) {
                         if (!isAdded() || getContext() == null) return;
                         progressBar.setVisibility(View.GONE);
-                        if (getContext() != null) {
-                            Toast.makeText(getContext(), "Failed to load profile", Toast.LENGTH_SHORT).show();
-                        }
+                        Toast.makeText(getContext(), "Failed to load profile", Toast.LENGTH_SHORT).show();
                     }
                 });
     }
@@ -171,17 +180,13 @@ public class ProfileFragment extends BaseInsetFragment {
 
     private void showDefaultAvatar() {
         ivProfile.setImageResource(R.drawable.ic_user);
-
-        // ✅ Important: FIT_CENTER will scale UP the vector to fill the view
         ivProfile.setScaleType(ImageView.ScaleType.FIT_CENTER);
 
-        // Optional: small padding so it doesn't touch edges
-        int pad = dpToPx(18);   // try 14–22
+        int pad = dpToPx(18);
         ivProfile.setPadding(pad, pad, pad, pad);
 
         ivProfile.setColorFilter(ContextCompat.getColor(requireContext(), R.color.primary));
     }
-
 
     private int dpToPx(int dp) {
         return (int) (dp * requireContext().getResources().getDisplayMetrics().density);
@@ -199,11 +204,8 @@ public class ProfileFragment extends BaseInsetFragment {
 
         firebaseHelper.getUserRef(userId).setValue(user)
                 .addOnSuccessListener(v -> updateUI(user))
-                .addOnFailureListener(e -> {
-                    if (getContext() != null) {
-                        Toast.makeText(getContext(), "Failed to create profile", Toast.LENGTH_SHORT).show();
-                    }
-                });
+                .addOnFailureListener(e ->
+                        Toast.makeText(getContext(), "Failed to create profile", Toast.LENGTH_SHORT).show());
     }
 
     private void showLogoutDialog() {
@@ -228,7 +230,6 @@ public class ProfileFragment extends BaseInsetFragment {
 
         if (getActivity() != null) getActivity().finish();
     }
-
 
     @Override
     public void onResume() {

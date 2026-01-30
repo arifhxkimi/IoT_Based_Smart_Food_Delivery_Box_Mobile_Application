@@ -2,14 +2,10 @@
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
 
-    <!-- Optional: rounded corners (won't show on all launchers, but nice) -->
+    <!-- Pure white background -->
+    <solid android:color="#FFFFFF" />
+
+    <!-- Optional rounded corners (mainly visible on some launchers) -->
     <corners android:radius="56dp" />
 
-    <!-- Purple gradient like your logo -->
-    <gradient
-        android:type="linear"
-        android:angle="270"
-        android:startColor="#7A2BFF"
-        android:centerColor="#5A17E6"
-        android:endColor="#3D0FBF" />
 </shape>

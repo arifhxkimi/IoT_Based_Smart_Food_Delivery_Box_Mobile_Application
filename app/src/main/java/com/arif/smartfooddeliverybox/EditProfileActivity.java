@@ -46,6 +46,40 @@ public class EditProfileActivity extends BaseInsetActivity {
     private boolean removePhoto = false;
     private String encodedImage = "";
 
+    // ✅ Camera launcher (simple preview bitmap)
+    private final ActivityResultLauncher<Void> cameraLauncher =
+            registerForActivityResult(new ActivityResultContracts.TakePicturePreview(),
+                    bitmap -> {
+                        if (bitmap == null) {
+                            Toast.makeText(this, "Camera cancelled", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+
+                        removePhoto = false;
+                        showBitmapAvatar(bitmap);
+                        encodedImage = encodeImage(bitmap);
+                        btnRemovePhoto.setVisibility(View.VISIBLE);
+                    });
+
+    // ✅ Gallery launcher (GetContent is simpler than ACTION_PICK intent)
+    private final ActivityResultLauncher<String> galleryLauncher =
+            registerForActivityResult(new ActivityResultContracts.GetContent(),
+                    uri -> {
+                        if (uri == null) return;
+
+                        try {
+                            Bitmap bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), uri);
+
+                            removePhoto = false;
+                            showBitmapAvatar(bitmap);
+                            encodedImage = encodeImage(bitmap);
+                            btnRemovePhoto.setVisibility(View.VISIBLE);
+
+                        } catch (IOException e) {
+                            Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -96,8 +130,9 @@ public class EditProfileActivity extends BaseInsetActivity {
     }
 
     private void setupListeners() {
-        btnChangePhoto.setOnClickListener(v -> openGalleryPicker());
-        ivProfile.setOnClickListener(v -> openGalleryPicker());
+        // ✅ Now open dialog instead of gallery directly
+        btnChangePhoto.setOnClickListener(v -> showPhotoOptions());
+        ivProfile.setOnClickListener(v -> showPhotoOptions());
 
         btnRemovePhoto.setOnClickListener(v -> confirmRemovePhoto());
 
@@ -105,33 +140,24 @@ public class EditProfileActivity extends BaseInsetActivity {
         btnCancel.setOnClickListener(v -> finish());
     }
 
-    private void openGalleryPicker() {
-        Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-        pickImageLauncher.launch(intent);
-    }
+    // ✅ Choose Camera or Gallery
+    private void showPhotoOptions() {
+        String[] options = {"Take Photo", "Choose from Gallery"};
 
-    private final ActivityResultLauncher<Intent> pickImageLauncher = registerForActivityResult(
-            new ActivityResultContracts.StartActivityForResult(),
-            result -> {
-                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                    Uri imageUri = result.getData().getData();
-                    if (imageUri == null) return;
-
-                    try {
-                        Bitmap bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), imageUri);
-
-                        removePhoto = false;
-                        showBitmapAvatar(bitmap);
-                        encodedImage = encodeImage(bitmap);
-
-                        btnRemovePhoto.setVisibility(View.VISIBLE);
-
-                    } catch (IOException e) {
-                        Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show();
+        new AlertDialog.Builder(this)
+                .setTitle("Profile Photo")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        // Camera
+                        cameraLauncher.launch(null);
+                    } else {
+                        // Gallery
+                        galleryLauncher.launch("image/*");
                     }
-                }
-            }
-    );
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
 
     private String encodeImage(Bitmap bitmap) {
         int previewWidth = 500;
@@ -210,16 +236,13 @@ public class EditProfileActivity extends BaseInsetActivity {
 
     private void showDefaultAvatar() {
         ivProfile.setImageResource(R.drawable.ic_user);
-
-        // ✅ Important
         ivProfile.setScaleType(ImageView.ScaleType.FIT_CENTER);
 
-        int pad = dpToPx(18);   // try 14–22
+        int pad = dpToPx(18);
         ivProfile.setPadding(pad, pad, pad, pad);
 
         ivProfile.setColorFilter(ContextCompat.getColor(this, R.color.primary));
     }
-
 
     private int dpToPx(int dp) {
         return (int) (dp * getResources().getDisplayMetrics().density);

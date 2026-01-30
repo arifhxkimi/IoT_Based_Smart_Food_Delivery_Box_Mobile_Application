@@ -9,6 +9,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDelegate;
 
 import com.arif.smartfooddeliverybox.models.User;
 import com.google.android.material.button.MaterialButton;
@@ -30,6 +31,8 @@ public class RegisterActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_registration);
 
@@ -64,11 +67,11 @@ public class RegisterActivity extends AppCompatActivity {
     }
 
     private void registerUser() {
-        String name = etName.getText().toString().trim();
-        String email = etEmail.getText().toString().trim();
-        String phone = etPhone.getText().toString().trim();
-        String password = etPassword.getText().toString().trim();
-        String confirmPassword = etConfirmPassword.getText().toString().trim();
+        String name = etName.getText() != null ? etName.getText().toString().trim() : "";
+        String email = etEmail.getText() != null ? etEmail.getText().toString().trim() : "";
+        String phone = etPhone.getText() != null ? etPhone.getText().toString().trim() : "";
+        String password = etPassword.getText() != null ? etPassword.getText().toString().trim() : "";
+        String confirmPassword = etConfirmPassword.getText() != null ? etConfirmPassword.getText().toString().trim() : "";
 
         // Validation
         if (TextUtils.isEmpty(name)) {
@@ -135,6 +138,7 @@ public class RegisterActivity extends AppCompatActivity {
 
                         mAuth.getCurrentUser().updateProfile(profileUpdates)
                                 .addOnCompleteListener(profileTask -> {
+
                                     // Create user object
                                     User user = new User();
                                     user.setUserId(userId);
@@ -146,17 +150,21 @@ public class RegisterActivity extends AppCompatActivity {
                                     usersRef.child(userId).setValue(user)
                                             .addOnCompleteListener(task1 -> {
                                                 showProgress(false);
+
                                                 if (task1.isSuccessful()) {
                                                     Toast.makeText(RegisterActivity.this,
                                                             "Registration successful!", Toast.LENGTH_SHORT).show();
-                                                    startActivity(new Intent(RegisterActivity.this, MainActivity.class));
-                                                    finish();
+
+                                                    // ✅ Go to onboarding/tutorial (first-time register flow)
+                                                    goToOnboarding();
+
                                                 } else {
                                                     Toast.makeText(RegisterActivity.this,
                                                             "Failed to save user data", Toast.LENGTH_SHORT).show();
                                                 }
                                             });
                                 });
+
                     } else {
                         showProgress(false);
                         String errorMessage = task.getException() != null ?
@@ -164,6 +172,13 @@ public class RegisterActivity extends AppCompatActivity {
                         Toast.makeText(RegisterActivity.this, errorMessage, Toast.LENGTH_LONG).show();
                     }
                 });
+    }
+
+    private void goToOnboarding() {
+        Intent intent = new Intent(RegisterActivity.this, OnboardingActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(intent);
+        finish();
     }
 
     private void showProgress(boolean show) {
@@ -174,5 +189,6 @@ public class RegisterActivity extends AppCompatActivity {
         etPhone.setEnabled(!show);
         etPassword.setEnabled(!show);
         etConfirmPassword.setEnabled(!show);
+        tvLogin.setEnabled(!show);
     }
 }
